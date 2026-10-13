@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Objects in Your Worlds</title>
+<style>
+:root{--bg:#120d18;--panel:#1c1524;--line:#3a2d47;--ink:#efe6f5;--muted:#b6a7c4;--acc:#e8a05a;--acc2:#7ab8ff;--ok:#6fd39a;--warn:#ffcf6a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 80px}
+h1{font-size:30px;margin:0 0 6px}
+h2{font-size:22px;margin:42px 0 10px;color:var(--acc)}
+h3{font-size:17px;margin:22px 0 6px}
+p{margin:8px 0}
+.lead{color:var(--muted);font-size:17px}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+nav a{color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 14px;font-size:14px}
+nav a:hover{border-color:var(--acc)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+.tag{display:inline-block;font-size:12px;border-radius:999px;padding:1px 9px;margin-right:4px;border:1px solid var(--line)}
+.have{color:var(--ok);border-color:#2f6b4c}.add{color:var(--acc);border-color:#7a5530}.unv{color:var(--warn);border-color:#7a6430}
+.step{display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:start}
+.num{width:36px;height:36px;border-radius:50%;background:var(--acc);color:#20140a;font-weight:800;display:flex;align-items:center;justify-content:center}
+.muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.chip{background:#241b2e;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:14px}
+a{color:var(--acc2)}
+.note{border-left:3px solid var(--warn);padding:6px 12px;background:#221c14;border-radius:0 10px 10px 0}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#3a2d47;border-radius:8px}
+html{scrollbar-width:thin;scrollbar-color:#3a2d47 transparent}
+@media (max-width:640px){.step{grid-template-columns:1fr}.num{margin-bottom:-4px}}
+</style></head>
+<body><div class="wrap">
+<h1>Objects in your worlds</h1>
+<p class="lead">You asked for Horizon's object toolkit built here as fully as possible: the plain-looking tool with a lot of ingenuity in it. This is how you'll grab, carry, turn, stretch, throw, lock and copy things in the Atelier and the BSA, in the headset and on the desktop. Part manual, part report: what Horizon Worlds does, what your app does today, and what gets built, in the order you'll feel it.</p>
+<nav><a href="#cheat">Your controls</a><a href="#horizon">What Horizon does</a><a href="#today">Your app today</a><a href="#plan">The plan</a><a href="#shapes">Shapes</a><a href="#others">Other VR apps</a><a href="#sources">Sources</a></nav>
+
+<h2 id="cheat">Your controls, once it's built</h2>
+<p class="muted">Trigger is the index finger. Grip is the middle finger. "Your hand" means your main (dominant) hand.</p>
+<p><b>Built and working now (2026-10-09):</b> see what you will grab (glowing box), grab and carry with the trigger, reach far, push and pull, spin, make it bigger or smaller with both triggers, turn it with both hands, stretch one direction with hands on opposite sides, drop where it is, locked things refuse, undo, move yourself, tap an object for its small menu (Lock, Reset size, Colour on shapes, Duplicate, Delete), pull any of the 28 shapes out of the wrist menu. turn Physics on for an object in its menu and it keeps your hand's speed when you let go, falls, bounces a little and settles on the floor. while its menu is open, handles appear: a cube on each face stretches that side (the far side stays put), an arrow moves it along one axis, a ring turns it about one axis; Snap in the menu makes moves and stretches go in 10 cm steps and turns in 15 degrees. Plastic, Metal and Glow in the menu (solid shapes). stick an object to your hand or your body until you let go, Keep my grip (every grab holds it the way your first did), and a row of 3 or 5 copies along any axis. Passing hand to hand works through the two-hand hold. see-through (100, 75, 50, 25, 10 percent), any body shader on a shape, and join, cut or keep-the-overlap between two shapes, all from the object menu. The wrist menu has an Objects tile (add a shape, pick one of the nearest objects, reopen the last one, Snap, Recently deleted), so nothing needs a tap on the object first. Select several: wrist menu > Objects > Select several, hold the trigger and sweep through the objects you want (a cyan box marks each); the picked menu can keep them together, colour, lock, copy or delete them all, and grabbing any one moves the whole selection or group. Groups last for the session and are not saved with the scene. Put an object in a figure's hand by holding it there and choosing More > Attach to her hand: it follows her wrist when she moves. With Snap on, two-hand scale goes in 10 percent steps. <b>Left out on purpose:</b> a real light inside Glow shapes, because every extra light slows every surface in the headset; Glow already shines on its own (it uses the glow brightness, not a light).</p>
+<div class="card"><table>
+<tr><th>To do this</th><th>In the headset</th><th>On the desktop</th></tr>
+<tr><td>See what you're about to grab</td><td>Point at it or touch it with your hand. A warm glowing box outlines it.</td><td>Hover; the card and the object light up</td></tr>
+<tr><td>Grab and carry</td><td>Hold the trigger on it. It stays in your hand, moving and turning with your hand, like a real object.</td><td>Click and drag</td></tr>
+<tr><td>Reach something far away</td><td>Point the ray at it and hold the trigger (up to about 4 m)</td><td>Click it</td></tr>
+<tr><td>Push it away / pull it closer</td><td>While holding: stick forward or back</td><td>Drag with the move arrows</td></tr>
+<tr><td>Spin it in your hand</td><td>While holding: stick left or right, or just turn your wrist</td><td>Rotate rings</td></tr>
+<tr><td>Make it bigger or smaller</td><td>Hold it with both triggers and move your hands apart or together</td><td>Size handle, or the Size slider</td></tr>
+<tr><td>Stretch it in one direction</td><td>Hold it by two opposite sides, one hand on each, and pull apart</td><td>Drag a face handle</td></tr>
+<tr><td>Drop it where it is</td><td>Let go of the trigger. It stays exactly there (Physics off).</td><td>Let go</td></tr>
+<tr><td>Throw it</td><td>Turn on Physics for that object, then let go while moving your hand. It flies, falls and bounces.</td><td>Physics toggle</td></tr>
+<tr><td>Open its menu</td><td>Tap the trigger on it quickly, without moving</td><td>Click its card</td></tr>
+<tr><td>Lock / unlock</td><td>In its menu: Lock. Locked things show a grey outline and a small padlock. The trigger just buzzes and says "Locked".</td><td>Padlock on its card</td></tr>
+<tr><td>Copy it</td><td>In its menu: Duplicate. The copy appears in your hand.</td><td>Duplicate button</td></tr>
+<tr><td>Delete it</td><td>In its menu: Delete. It goes to Recently deleted (wrist menu, More, Recently deleted), where one tap brings it back.</td><td>Delete, then More &gt; Recently deleted if needed</td></tr>
+<tr><td>Colour and material</td><td>In its menu: colour swatches, plus Plastic, Metal or Glow, with how strong</td><td>Same, in its settings</td></tr>
+<tr><td>Snap to a grid</td><td>In its menu or the main menu: Snap (10 cm steps, 15 degree turns)</td><td>Snap toggle</td></tr>
+<tr><td>Pull a new shape out</td><td>Open Shapes in the menu, point at one, hold the trigger. It comes out into your hand.</td><td>Click a shape card</td></tr>
+<tr><td>Undo / redo</td><td>Menu hand's stick: click it while pushing left (undo) or right (redo). This already works.</td><td>Undo / Redo buttons</td></tr>
+<tr><td>Move yourself around</td><td>Grip: reach and pull the world, as now (Horizon does the same)</td><td>Orbit with the mouse</td></tr>
+</table>
+<p class="muted">People and bodies: grabbing a body (away from its joint handles) moves the whole person and turns them left or right, like the doll grab you have now. They never tip over by accident. Joint handles still pose, and still take priority when your hand is on one.</p></div>
+
+<h2 id="horizon">What Horizon Worlds does with objects</h2>
+<p>Read from Meta's own creator documentation on 9 October 2026 (links at the bottom). Horizon has two modes: Build Mode, where you make things, and play, where things are used.</p>
+<div class="card">
+<h3>Build Mode</h3>
+<table>
+<tr><th>Action</th><th>Horizon's control</th></tr>
+<tr><td>Highlight</td><td>Put the tip of the teardrop cursor inside an object. It shows a bounding box.</td></tr>
+<tr><td>Grab and move (Grab tool)</td><td>Hold the index trigger on the highlighted object. It moves with your hand. Holding the trigger in empty space and swiping through objects selects them.</td></tr>
+<tr><td>Scale</td><td>Grab the shape with both controllers and move your hands closer or farther apart.</td></tr>
+<tr><td>Stretch / move / rotate on one axis</td><td>Three handles per axis. Grab a Stretch handle to stretch one side; highlighting it reveals a Move handle and a Rotate handle.</td></tr>
+<tr><td>Duplicate (Duplicate tool)</td><td>Hold the trigger on an object to grab a copy of it. Grabbing a Move handle with this tool duplicates along that axis.</td></tr>
+<tr><td>Lock / unlock (Lock tool)</td><td>Click the trigger on an object to lock it so it can't be edited, moved or deleted; click again to unlock.</td></tr>
+<tr><td>Paint (Paint tool)</td><td>Tap a colour, point at the shape, click the trigger. Materials: Plastic, Metal, Glow, each with an intensity.</td></tr>
+<tr><td>Snap</td><td>Select Snap with the secondary thumbstick; set the snap size and angle in Settings.</td></tr>
+<tr><td>Switch tools</td><td>Push the thumbstick up, down, left or right (up to four tools per controller).</td></tr>
+<tr><td>Move yourself</td><td>Grip and pull to move; both grips turned like a wheel to turn; both grips apart or together to change your size.</td></tr>
+<tr><td>Get a shape</td><td>Creator Menu (left controller's menu button), Build, Shapes: highlight a shape and drag it into your world.</td></tr>
+</table>
+<p class="muted">One thing Horizon makes you do that you won't have to: switching tools (Grab, Duplicate, Lock, Paint) with the stick, and switching back after, "to avoid accidental duplicates, locking or painting", in Meta's words. Here, grabbing is always on, and the rest live in the object's own menu.</p>
+<h3>Play mode (grabbable objects)</h3>
+<table>
+<tr><td>Hold</td><td>Grabbable objects are picked up and carried.</td></tr>
+<tr><td>Physics off</td><td>"Unaffected by gravity when released": it stays where you let go.</td></tr>
+<tr><td>Physics on</td><td>Reacts to gravity and collisions, so it can be thrown, like a ball.</td></tr>
+<tr><td>Grip pose / grab anchor</td><td>Sets how the hand holds it and exactly where it attaches.</td></tr>
+<tr><td>Hand off</td><td>Who can take it from you: No one, Only you (pass hand to hand), or Anyone.</td></tr>
+</table>
+<p class="muted">Meta's web toolkit for headsets names the same three kinds of grab: one hand (move and turn), two hands (move, turn and scale), and distance (by ray). Only one is active on an object at a time.</p>
+</div>
+
+<h2 id="today">What your app does today</h2>
+<div class="card">
+<ul>
+<li>The trigger poses: it grabs the glowing joint handles on a body.</li>
+<li>Objects (props, shapes, mirrors, whole bodies) move only while you hold a button on your main hand: the lower button to Move, the upper to Turn, both to Size. Even then, Move only slides, Turn only turns left and right, and Size follows how high your hand goes. That's the part that doesn't feel like a real object.</li>
+<li>The grip already moves you through the world, as in Horizon. That stays.</li>
+<li>Locks exist only for joints (the pin). Objects can't be locked yet.</li>
+<li>Undo and redo already work from the menu hand's stick.</li>
+</ul></div>
+
+<h2 id="plan">The plan, in the order you'll feel it</h2>
+<p class="muted">Each step leaves everything working, is tested in the headset emulator with measured numbers before you see it, and keeps the old buttons working too.</p>
+
+<div class="card step"><div class="num">1</div><div><h3>Grab anything, instantly</h3>
+<p>Hold the trigger on any unlocked object and it's in your hand. It follows your hand's position and its turning, the way a cup does. The stick pushes it away or pulls it in, or spins it. Let go and it stays. One undo per grab.</p>
+<p class="muted">Test: grab the cone, move the hand 30 cm and turn it 45 degrees, let go. The cone moved 30 cm and turned 45 degrees, and undo puts it back exactly. A joint handle inside the cone still poses the joint.</p></div></div>
+
+<div class="card step"><div class="num">2</div><div><h3>Two hands: size, turn, stretch</h3>
+<p>Catch the object you're holding with your other trigger too. Hands apart: bigger. Together: smaller. Turn both hands: it turns. Hold it by two opposite sides and pull: it stretches that way only.</p>
+<p class="muted">Test: hands 40 cm apart moved to 80 cm, the object is exactly twice the size. Hands on the left and right sides pulled apart, only its width changes.</p></div></div>
+
+<p><b>You see it here,</b> after steps 1 and 2.</p>
+
+<div class="card step"><div class="num">3</div><div><h3>Each object's own menu, and Lock</h3>
+<p>A quick tap on an object opens its small menu: Lock or Unlock, Duplicate, Delete, Colour, Material (Plastic, Metal, Glow), Physics, Snap, Reset size. Locked objects get a grey outline and a little padlock, and can't be grabbed or deleted. The room, floor and walls start locked; props, shapes and mirrors start unlocked. Locks are saved with the scene. On the desktop, each card gets the same padlock.</p></div></div>
+
+<div class="card step"><div class="num">4</div><div><h3>All the shapes</h3>
+<p>The new shapes in the section below, as picture cards in four groups. In the headset you pull one straight out of the menu into your hand.</p></div></div>
+
+<p><b>You see it here,</b> after the shapes.</p>
+
+<div class="card step"><div class="num">5</div><div><h3>Throw and drop</h3>
+<p>With Physics on, a let-go object keeps the speed and spin of your hand: it flies, falls, bounces a little, and settles on the floor. With Physics off (the default) it stays where you leave it. It's light enough for the headset: no physics engine to download.</p></div></div>
+
+<div class="card step"><div class="num">6</div><div><h3>Copy and delete</h3>
+<p>Duplicate puts a copy straight into your hand. Delete goes to Recently deleted (More, Recently deleted), and one tap brings it back.</p></div></div>
+
+<div class="card step"><div class="num">7</div><div><h3>Precise handles and snap</h3>
+<p>Tap an object to show its handles: a box on each face to stretch one side, arrows to slide along one direction, rings to turn about one axis. Snap makes moves 10 cm steps and turns 15 degree steps.</p></div></div>
+
+<div class="card step"><div class="num">8</div><div><h3>Horizon's clever touches, all of them</h3>
+<ul>
+<li><b>Swipe to select several:</b> hold the trigger in empty space and sweep through objects. Each one you pass through joins the selection, and then they move, size, colour, lock and copy together.</li>
+<li><b>Group:</b> in the selection's menu, Group makes them one object you grab as one, and Ungroup splits them again.</li>
+<li><b>Copy along a line:</b> hold Duplicate and drag a move arrow. Copies are laid out along that direction at the snap spacing, like a row of stepping stones or a fence.</li>
+<li><b>Carry it on you:</b> "Stick to my hand" keeps an object in your hand while you walk and use the menus (a lantern, a flower). "Stick to my body" keeps it at your hip or shoulder.</li>
+<li><b>Hand it over:</b> pass an object from one hand to the other by grabbing it with the second hand and letting go with the first. With bodies in the scene, you can place it in a figure's hand (it rides their hand as they move).</li>
+<li><b>Where the hand holds it:</b> each object remembers the spot where you first gripped it, so a cup comes up by its handle every time.</li>
+<li><b>Glow that lights:</b> the Glow material can also light what's around it, as a small light, if you want.</li>
+<li><b>Bounding box and cursor:</b> the glowing box shows exactly which object your hand is on before you grab, so you never pick up the wrong thing.</li>
+</ul></div></div>
+
+<h2 id="shapes">Shapes: Horizon's set and yours</h2>
+<div class="note">I couldn't verify Horizon's exact list. Meta's pages describe the Shapes menu but don't list what's in it. So instead of guessing, the plan builds every shape the major creation tools share (Horizon's build menu, Roblox, Unity, Blender): 26 in all, more than the roughly 20 you remember. You know Horizon's menu: if something in it is missing here, name it and it gets added.</div>
+<div class="card">
+<h3>You already have <span class="tag have">10 + 2</span></h3>
+<div class="grid"><div class="chip">Cube</div><div class="chip">Sphere</div><div class="chip">Cylinder</div><div class="chip">Cone</div><div class="chip">Pyramid</div><div class="chip">Torus (doughnut)</div><div class="chip">Capsule</div><div class="chip">Diamond</div><div class="chip">Hexagon prism</div><div class="chip">Plane</div><div class="chip">3D text</div><div class="chip">Combined shapes (cut / join)</div></div>
+<h3>Being added <span class="tag add">16</span></h3>
+<div class="grid"><div class="chip">Wedge (ramp)</div><div class="chip">Corner wedge</div><div class="chip">Inner corner wedge</div><div class="chip">Dome (half sphere)</div><div class="chip">Half cylinder</div><div class="chip">Quarter cylinder (quarter pipe)</div><div class="chip">Tube (hollow cylinder)</div><div class="chip">Ring (washer)</div><div class="chip">Disc</div><div class="chip">Arch</div><div class="chip">Stairs</div><div class="chip">Triangle prism</div><div class="chip">Pentagon prism</div><div class="chip">Tetrahedron</div><div class="chip">Dodecahedron</div><div class="chip">Icosahedron (geodesic ball)</div></div>
+<p class="muted">Also two playful ones: star and heart. Every shape is drawn by code, so there are no downloads and no licence to worry about if you ever sell the app. Each one takes the same colours, materials, glass container, lock and physics as the shapes you have.</p>
+<h3>Where you'll find them</h3>
+<table>
+<tr><th>Group</th><th>Shapes</th></tr>
+<tr><td>Basic</td><td>Cube, sphere, cylinder, cone, pyramid, capsule, torus, plane, disc</td></tr>
+<tr><td>Building</td><td>Wedge, corner, inner corner, half cylinder, quarter cylinder, stairs, arch, tube, ring</td></tr>
+<tr><td>Solids</td><td>Tetrahedron, diamond, dodecahedron, icosahedron, triangle, pentagon and hexagon prisms, dome</td></tr>
+<tr><td>Special</td><td>3D text, combined shapes, star, heart</td></tr>
+</table>
+<p class="muted">The same four groups appear in the Shapes tab as picture cards, and in the headset menu as pages of icons.</p>
+</div>
+
+<h2 id="others">How other headset creation apps do it</h2>
+<p class="muted">From general knowledge of these apps, not re-checked today. Useful because they all agree, and your plan follows what they agree on.</p>
+<div class="card"><table>
+<tr><th>App</th><th>Grab</th><th>Scale</th><th>Worth borrowing</th></tr>
+<tr><td>Gravity Sketch</td><td>Grip grabs and moves, follows the hand fully</td><td>Both grips, apart / together</td><td>Grabbing never needs a tool switch</td></tr>
+<tr><td>ShapesXR</td><td>Grab follows the hand; handles for exact edits</td><td>Two hands, plus handles</td><td>Free grab first, precise handles second</td></tr>
+<tr><td>Rec Room (Maker Pen)</td><td>Trigger to grab and move objects</td><td>Handles and a size setting</td><td>Physics per object, throwable when on</td></tr>
+<tr><td>Horizon Worlds</td><td>Trigger in Build Mode</td><td>Both triggers</td><td>Pulling a copy into your hand; lock with a padlock</td></tr>
+</table></div>
+
+<h2 id="sources">Sources</h2>
+<ul>
+<li><a href="https://developers.meta.com/horizon-worlds/learn/documentation/get-started/using-controllers-in-build-mode/">Use your controllers in Build Mode of Meta Horizon Worlds</a> (Meta)</li>
+<li><a href="https://developers.meta.com/horizon-worlds/learn/documentation/get-started/using-the-creator-menu/">Use the Creator Menu in Meta Horizon Worlds</a> (Meta)</li>
+<li><a href="https://developers.meta.com/horizon-worlds/learn/videos/grab-interactions-in-mobile">Grab interactions</a> (Meta): physics vs non-physics grabs, grip poses, hand-off</li>
+<li><a href="https://developers.meta.com/horizon/documentation/iwsdk/concepts/grabbing/">Grabbing in Meta's web toolkit (IWSDK)</a>: one-hand, two-hand and distance grabs</li>
+</ul>
+<p class="muted">Written by your body-shader mentor, 9 October 2026. The working plan for the builder is in tools/objects_2026-10-09/PLAN.md.</p>
+</div></body></html>

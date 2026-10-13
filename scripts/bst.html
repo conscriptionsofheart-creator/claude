@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BST · asset builder</title>
+<!-- BST (the asset builder). Its own three.js (vendored, r186), never loaded with the app's r128. Assets leave only as .glb, to /pe_assets (pe_asset_store.py).
+     The Atelier's shapes come from lib/primitives.js, unchanged. Look and rules: the Atelier's (#1c1626 panels, #241a33 cards, #e8a866 orange, pills, no native controls). -->
+<script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script>
+<style>
+:root{--bg:#120d1b;--panel:#1c1626;--panel2:#241a33;--line:#3a2f4a;--line2:#5a4a6a;--line3:#4a3a5a;--btn:#2a2036;--acc:#e8a866;--acc2:#ffd9a8;--fg:#f1ebe0;--mut:#b3a8c4;--ok:#7fd6a0;--warn:#ffcf7a;--bad:#ff8c7a}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,sans-serif;overflow:hidden}
+*{scrollbar-width:thin;scrollbar-color:#5a4a6a #1c1626}
+*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-thumb{background:#5a4a6a;border-radius:8px}*::-webkit-scrollbar-track{background:#1c1626}
+button{font:600 13px system-ui;color:var(--fg);background:var(--btn);border:1px solid var(--line2);border-radius:99px;padding:7px 16px;min-height:32px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button:focus-visible,input:focus-visible,.menu-btn:focus-visible,.card:focus-visible,.row.pick:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button.p{background:var(--acc);color:#20140a;border-color:#fff}button.p:disabled{opacity:.45;cursor:default}
+button.on{border-color:var(--acc);background:#3a2b4a;color:var(--acc2)}
+input[type=text],input[type=number]{width:100%;background:#120d1b;color:var(--fg);border:1px solid var(--line3);border-radius:10px;padding:7px 10px;font:14px system-ui}
+#app{display:grid;grid-template-columns:260px 1fr 320px;grid-template-rows:52px 1fr;height:100%}
+header{grid-column:1/4;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+header h1{font-size:16px;margin:0;color:var(--acc2);letter-spacing:.02em}header .sub{color:var(--mut);font-size:13px}
+header .sp{flex:1}header .lab{color:var(--mut);font-size:13px}
+aside{background:var(--panel);overflow:auto;padding:12px}
+#left{border-right:1px solid var(--line)}#right{border-left:1px solid var(--line);display:flex;flex-direction:column;padding:0}
+#rightScroll{flex:1;overflow:auto;padding:12px}
+#sendBar{border-top:1px solid var(--line);padding:10px 12px;background:var(--panel)}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--acc);margin:16px 0 8px}h2:first-child{margin-top:0}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}.tabs button{padding:6px 12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.grid button{text-align:left;padding:6px 12px;font-weight:500}
+.grp{grid-column:1/3;font-size:12px;color:var(--mut);margin-top:6px}
+#stage{position:relative;min-width:0;min-height:0}
+#stage.drop:after{content:"Drop the .glb to open it";position:absolute;inset:12px;border:2px dashed var(--acc);border-radius:16px;display:flex;align-items:center;justify-content:center;color:var(--acc2);font-size:18px;background:rgba(18,13,27,.7);pointer-events:none}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+#hud{position:absolute;left:12px;top:12px;pointer-events:none;background:rgba(28,22,38,.85);border:1px solid var(--line2);border-radius:14px;padding:8px 14px}
+#hud .big{font-size:26px;font-weight:700;line-height:1.1}#hud .lab{color:var(--mut);font-size:13px}
+#bottom{position:absolute;left:12px;right:12px;bottom:12px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;pointer-events:none}#bottom>*{pointer-events:auto}
+#views{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+#hint{color:var(--mut);font-size:13px;pointer-events:none;background:rgba(28,22,38,.7);border-radius:99px;padding:3px 12px}
+#empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:var(--mut);text-align:center;padding:30px}
+.hero{background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+.hero .cnt{font-size:34px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}.hero .cnt small{font-size:14px;font-weight:500;color:var(--mut);margin-left:6px}
+.meter{height:22px;background:#120d1b;border:1px solid var(--line3);border-radius:99px;overflow:hidden;position:relative;margin:10px 0 8px}
+.meter i{display:block;height:100%;width:0;background:var(--ok)}.meter u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--fg);opacity:.9}
+.sent{font-size:13px;line-height:1.5}.sent b{font-weight:700}
+.rows{display:flex;flex-direction:column;gap:4px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:6px 10px;border:1px solid transparent;border-radius:10px;min-height:30px;align-items:center}
+.row.pick{cursor:pointer}.row.pick:hover{border-color:var(--line2)}
+.row.cur{border-color:var(--acc);background:var(--panel2)}.row .v{font-variant-numeric:tabular-nums}
+.pass{color:var(--ok)}.fail{color:var(--bad)}.amb{color:var(--warn)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:13px}.kv span:nth-child(odd){color:var(--mut)}.kv span:nth-child(even){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu{position:relative}.menu-btn{width:100%;text-align:left;border-radius:12px;padding:8px 30px 8px 12px;position:relative;font-weight:500}
+.menu-btn:after{content:"";position:absolute;right:12px;top:50%;margin-top:-3px;border:5px solid transparent;border-top-color:var(--acc)}
+.menu-list{position:absolute;z-index:50;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--acc);border-radius:14px;max-height:320px;overflow:auto;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.menu-list[hidden]{display:none}.menu-list div{padding:8px 12px;border-radius:10px;cursor:pointer;font-size:13px}
+.menu-list div.sel{outline:1px solid var(--acc)}.menu-list div:hover,.menu-list div.hot{background:#3a2b4a}
+#tools{position:absolute;right:12px;top:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 200px)}
+#tools .tg{display:flex;gap:6px}
+#tools button:disabled,.ops button:disabled{opacity:.45;cursor:default}
+.ops{display:flex;flex-wrap:wrap;gap:6px}.ops button{padding:5px 12px;min-height:30px;font-size:13px}
+.olist{display:flex;flex-direction:column;gap:4px}
+.orow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 10px;border:1px solid transparent;border-radius:10px;cursor:pointer;min-height:32px;font-size:13px}
+.orow:hover{border-color:var(--line2)}.orow.sel{border-color:var(--acc);background:var(--panel2)}.orow.hid .nm{color:var(--mut);text-decoration:line-through}
+.orow:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.orow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.orow .n{color:var(--mut);font-variant-numeric:tabular-nums;flex:none}
+.orow button{padding:3px 12px;min-height:28px;font-size:13px}
+.seg{display:flex;flex-wrap:wrap;gap:6px}.seg button{padding:5px 12px;min-height:30px;font-size:13px}
+label.sl{display:flex;justify-content:space-between;color:var(--mut);font-size:13px;margin:12px 0 4px}label.sl span{color:var(--fg)}
+input[type=range]{width:100%;accent-color:var(--acc);margin:0}
+.orow input[type=range]{width:90px;flex:none}
+.lib{display:flex;flex-direction:column;gap:8px}
+.card{display:flex;gap:10px;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--panel2);cursor:pointer}
+.card:hover{border-color:var(--acc)}.card img,.card .noimg{width:56px;height:56px;border-radius:10px;object-fit:cover;background:#120d1b;flex:none}
+.card .body{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
+.card .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.card .m{font-size:13px;color:var(--mut)}
+.card .act{display:flex;gap:6px;margin-top:4px;align-items:center}.card .act button{padding:3px 12px;min-height:28px;font-size:13px}
+.tag{font-size:12px;border:1px solid var(--line2);border-radius:99px;padding:1px 9px;align-self:flex-start}.tag.r{border-color:var(--bad);color:var(--bad)}
+.msg{color:var(--mut);font-size:13px}.small{font-size:13px;color:var(--mut)}
+#back{position:fixed;inset:0;z-index:1000;background:rgba(10,7,16,.62);display:none;align-items:center;justify-content:center;padding:16px}
+#box{background:var(--panel);color:var(--fg);border:1px solid var(--acc);border-radius:16px;box-shadow:0 14px 48px rgba(0,0,0,.55);max-width:480px;width:100%;padding:16px 18px;max-height:92vh;overflow:auto}
+#box h3{margin:0 0 10px;color:var(--acc2);font-size:16px}#box label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+#box .menu-list{position:static;margin-top:4px;max-height:none}
+#box label.chk{display:flex;gap:8px;align-items:center;color:var(--fg);margin-top:12px}#box label.chk input{width:auto}
+#box .r{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>BST</h1><span class="sub">asset builder</span><span class="sp"></span>
+    <span class="lab" id="budgetLab">Delivery budget</span><div class="menu" id="budgetMenu" style="width:300px"></div>
+  </header>
+  <aside id="left">
+    <div class="tabs" role="tablist"><button id="tabShapes" class="on" role="tab" aria-selected="true">Shapes</button><button id="tabStage" role="tab" aria-selected="false">On stage (0)</button><button id="tabSculpt" role="tab" aria-selected="false">Sculpt</button><button id="tabBones" role="tab" aria-selected="false">Bones</button><button id="tabLib" role="tab" aria-selected="false">Library</button></div>
+    <div id="paneShapes">
+      <button id="openGlb" class="p" style="width:100%;margin-bottom:6px">Open .glb files…</button>
+      <input type="file" id="glbFile" accept=".glb,model/gltf-binary" multiple hidden>
+      <h2>Start from a shape</h2><div class="grid" id="shapeGrid"></div>
+    </div>
+    <div id="paneStage" hidden>
+      <div class="ops" role="toolbar" aria-label="Actions for the selected objects">
+        <button id="opDup" disabled title="Copy the selected objects. The copy keeps the same skins.">Duplicate</button>
+        <button id="opOne" disabled title="Copy the selected objects and make them one object with one mesh. A figure keeps all its bones. The originals stay.">Duplicate as one object</button>
+        <button id="opFlat" hidden title="Copy the selected objects as one plain mesh with no bones. The originals stay.">Flatten, no bones</button><button id="opPose" hidden title="Put every bone of the selected figures back to the pose they arrived in">Reset pose</button><button id="opHide" disabled>Hide</button><button id="opDel" disabled>Delete</button><button id="opClear" disabled>Clear</button>
+      </div>
+      <div class="small" id="opNote" aria-live="polite" style="margin:8px 0;min-height:3em"></div>
+      <div class="olist" id="stageList" role="listbox" aria-multiselectable="true" aria-label="Objects on the stage"></div>
+      <div id="trashBox" hidden><h2>Recently deleted</h2><div class="olist" id="trashList"></div></div>
+    </div>
+    <div id="paneSculpt" hidden>
+      <button id="skOn" class="p" style="width:100%" aria-pressed="false">Start sculpting</button>
+      <div class="small" id="skNote" aria-live="polite" style="margin:8px 0;min-height:3em"></div>
+      <h2>Brush</h2>
+      <div class="seg" id="skBrush" role="group" aria-label="Brush"><button data-v="inflate" title="Add volume: a bump, a belly, a neck roll, bags under the eyes">Inflate</button><button data-v="deflate" title="Take volume away">Deflate</button><button data-v="melt" title="Sag a whole region down and in, like a leg melting into a stump">Melt</button><button data-v="smooth" title="Even a region out">Smooth</button></div>
+      <label class="sl" for="skSize">Size <span id="skSizeV">6 cm</span></label><input type="range" id="skSize" min="1" max="40" step="1" value="6">
+      <label class="sl" for="skStr">Strength <span id="skStrV">40%</span></label><input type="range" id="skStr" min="5" max="100" step="5" value="40">
+      <h2>Symmetry</h2>
+      <div class="seg" id="skSym" role="group" aria-label="Symmetry"><button data-v="off" title="One mark only: a beauty mark, a lump">Off</button><button data-v="mirror" title="The same mark on the other side of the body">Mirror</button><button data-v="radial" title="The same mark repeated all the way around the body, N times">360°</button></div>
+      <label class="sl" for="skCount">Copies around the body</label><input type="text" id="skCount" value="6" maxlength="2" inputmode="numeric" disabled>
+      <h2>Sculpt into</h2>
+      <div class="seg" id="skInto" role="group" aria-label="Sculpt into"><button data-v="base" title="Change the figure itself">The base shape</button><button data-v="key" title="Make a named slider that goes from the figure as it is to your sculpt, saved in the .glb">A shape key</button></div>
+      <label class="sl" for="skKey">Shape key name</label><input type="text" id="skKey" value="Shape 1" maxlength="40"><button id="skNew" style="margin-top:6px">Start a new shape key</button><div class="small" style="margin-top:6px">Strokes keep going into the key named here. With Mirror on, it makes a left key and a right key together, each its own slider.</div>
+      <h2>Shape keys</h2><div class="olist" id="skKeys"></div>
+    </div>
+    <div id="paneBones" hidden>
+      <div class="small" id="bnNote" aria-live="polite" style="margin:0 0 8px;min-height:3em"></div>
+      <h2>Add a bone</h2>
+      <div class="small" id="bnParent">Turn on the Bones view and click a bone dot: the new bone grows from it.</div>
+      <label class="sl" for="bnName">Name</label><input type="text" id="bnName" value="New bone" maxlength="40">
+      <label class="sl" for="bnX">Across, in cm (the figure's left is plus)</label><input type="text" id="bnX" value="0" inputmode="decimal" maxlength="6">
+      <label class="sl" for="bnY">Up, in cm</label><input type="text" id="bnY" value="10" inputmode="decimal" maxlength="6">
+      <label class="sl" for="bnZ">Forward, in cm</label><input type="text" id="bnZ" value="0" inputmode="decimal" maxlength="6">
+      <label class="sl" for="bnR">Skin it: radius in cm <span id="bnRV">0 (no skin yet)</span></label><input type="range" id="bnR" min="0" max="30" step="1" value="0">
+      <button id="bnAdd" class="p" style="width:100%;margin-top:10px" disabled>Add bone</button>
+      <div class="small" style="margin-top:8px">Skin radius 0 adds the bone and leaves the skin alone, so you can paint it by hand. A radius gives the skin inside it to the new bone (a bone sits a few centimetres inside the body, so the radius has to reach the surface: 8 to 15 cm for a limb), full at the bone and fading to nothing at the rim. For a tail, a hat or a cloak: put it by the bone, select it with the figure and use Duplicate as one object; it ties to the nearest bone.</div>
+      <h2>Bones you added</h2><div class="olist" id="bnList"></div>
+      <h2>Paint skin</h2>
+      <div class="small" id="pnBone" aria-live="polite">Pick a bone first (Bones view, click a dot).</div>
+      <button id="pnOn" style="width:100%;margin-top:8px" aria-pressed="false">Paint skin</button>
+      <div class="seg" id="pnBrush" role="group" aria-label="Skin brush" style="margin-top:8px"><button data-v="add" title="Give the skin under the brush to this bone">Add</button><button data-v="remove" title="Take the skin under the brush away from this bone">Remove</button><button data-v="smooth" title="Even out where this bone's hold fades">Smooth</button></div>
+      <label class="sl" for="pnSize">Size <span id="pnSizeV">6 cm</span></label><input type="range" id="pnSize" min="1" max="30" step="1" value="6">
+      <label class="sl" for="pnStr">Strength <span id="pnStrV">50%</span></label><input type="range" id="pnStr" min="5" max="100" step="5" value="50">
+      <div class="small" style="margin-top:8px">While you paint the figure turns blue where the bone owns none of the skin, green half, red all of it. The weights of each point always add to 1, so what one bone gains another gives up.</div>
+    </div>
+    <div id="paneLib" hidden><h2>Saved assets</h2><div class="lib" id="libList"></div></div>
+  </aside>
+  <main id="stage">
+    <canvas id="cv" aria-label="3D view of the asset"></canvas>
+    <div id="hud"><div class="big" id="hudTris">0</div><div class="lab" id="hudLab">triangles</div></div>
+    <div id="tools" role="toolbar" aria-label="Tools"><span class="tg"><button id="tMove" title="Move (W)" aria-pressed="true">Move</button><button id="tTurn" title="Turn (E)" aria-pressed="false">Turn</button><button id="tSize" title="Size (R)" aria-pressed="false">Size</button></span><span class="tg"><button id="tUndo" title="Undo (Ctrl or Cmd+Z)" disabled>Undo</button><button id="tRedo" title="Redo (Shift+Ctrl or Shift+Cmd+Z)" disabled>Redo</button></span><span class="tg"><button id="tSculpt" title="Sculpt brushes: inflate, deflate, melt, smooth" aria-pressed="false">Sculpt</button></span><span class="tg"><button id="tFig" title="A plain 1.75 m figure for scale" aria-pressed="false">Scale figure</button></span></div>
+    <div id="bottom"><div id="hint">Click to select · Shift-click adds · Drag to turn · scroll to zoom · right-drag to move</div><div id="views"></div></div>
+    <div id="empty"><div><div style="font-size:18px;color:var(--acc2);margin-bottom:6px">Pick a shape, or drop .glb files here.</div></div></div>
+  </main>
+  <aside id="right">
+    <div id="rightScroll">
+      <h2>Triangle meter</h2>
+      <div class="hero"><div class="cnt"><span id="cnt">0</span><small>triangles</small></div>
+        <div class="meter" aria-hidden="true"><i id="bar"></i><u id="tick" hidden></u></div>
+        <div class="sent" id="barLab" aria-live="polite">&nbsp;</div></div>
+      <h2>Budgets</h2>
+      <div class="rows" id="ladder"></div>
+      <h2 id="infoTitle">This object</h2>
+      <div class="kv" id="info"></div>
+    </div>
+    <div id="sendBar"><button class="p" id="send" style="width:100%" disabled>Send to library…</button>
+      <div class="small" id="sendNote" style="margin-top:6px"></div></div>
+  </aside>
+</div>
+<div id="back"><div id="box" role="dialog" aria-modal="true" aria-labelledby="boxTitle"></div></div>
+<script src="/pe_lib/atelier_dialog.js?v=4"></script>
+<script src="/pe_lib/primitives.js"></script>
+<script type="module" src="/pe_lib/bst_app.js"></script>
+</body>
+</html>

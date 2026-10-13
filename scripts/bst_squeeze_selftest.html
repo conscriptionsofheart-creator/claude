@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><title>BST squeeze self-test</title>
+<script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script>
+<body style="font:14px system-ui;background:#120d1b;color:#f1ebe0"><pre id="o">running…</pre>
+<script type="module">
+/* ?three=128 or 186: tubeGeometry (lib/bst_squeeze.js): round tube volume, closed and not inside out (also mirrored), flat ribbon section, taffy thin ends, beads vary, one point, copies for mirror and 360. */
+import { tubeGeometry, strokeCopies } from '/pe_lib/bst_squeeze.js';
+import { solidFromMesh } from '/pe_lib/bst_cut.js';
+const v = new URLSearchParams(location.search).get('three') || '186', out = document.getElementById('o');
+const load = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error(src + ' missing')); document.head.appendChild(s); });
+try {
+  let T; if (v === '128') { await load('/pe_lib/three.min.js'); T = window.THREE; } else T = await import('/pe_lib/bst_three_0.186.1.module.js');
+  const V3 = T.Vector3, res = { revision: String(T.REVISION) };
+  const vol = g => { const A = g.attributes.position.array, I = g.index.array; let s = 0; for (let t = 0; t < I.length; t += 3) { const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3; s += (A[a] * (A[b + 1] * A[c + 2] - A[b + 2] * A[c + 1]) - A[a + 1] * (A[b] * A[c + 2] - A[b + 2] * A[c]) + A[a + 2] * (A[b] * A[c + 1] - A[b + 1] * A[c])) / 6; } return s; };
+  const line = (n, L) => { const p = []; for (let i = 0; i < n; i++) p.push(new V3(i / (n - 1) * L, 1, 0)); return p; };
+  const open = g => { const I = g.index.array, A = g.attributes.position.array, key = i => Math.round(A[i * 3] * 1e5) + '_' + Math.round(A[i * 3 + 1] * 1e5) + '_' + Math.round(A[i * 3 + 2] * 1e5), cnt = new Map(); for (let t = 0; t < I.length; t += 3) for (let k = 0; k < 3; k++) { const a = key(I[t + k]), b = key(I[t + (k + 1) % 3]), kk = a < b ? a + '|' + b : b + '|' + a; cnt.set(kk, (cnt.get(kk) || 0) + 1); } let o = 0; cnt.forEach(c => { if (c !== 2) o++; }); return o; };
+  const L = 0.5, r = 0.02, pts = line(30, L), g = tubeGeometry(T, pts, pts.map(() => r), { profile: 'round' });
+  res.roundVol = Math.abs(vol(g)); res.roundExpected = Math.PI * r * r * L + 4 / 3 * Math.PI * r ** 3; res.roundSign = vol(g) > 0 ? 1 : 0; res.roundOpen = open(g); res.roundTris = g.index.count / 3;
+  res.roundNaN = Array.from(g.attributes.position.array).some(x => !isFinite(x)) ? 1 : 0; res.roundHasUv = g.attributes.uv && g.attributes.uv.count === g.attributes.position.count ? 1 : 0;
+  const gm = tubeGeometry(T, pts.map(p => new V3(-p.x, p.y, p.z)), pts.map(() => r), { profile: 'round' }); res.mirrorSign = vol(gm) > 0 ? 1 : 0; res.mirrorVolRatio = Math.abs(vol(gm)) / res.roundVol;
+  const sol = solidFromMesh(T, g, new T.Matrix4()); res.closedForStamp = sol.closed ? 1 : 0;
+  const gt = tubeGeometry(T, pts, pts.map(() => r), { profile: 'taffy' }); const secR = (G, x) => { const A = G.attributes.position.array; let m = 0; for (let i = 0; i < A.length; i += 3) if (Math.abs(A[i] - x) < 0.01) m = Math.max(m, Math.hypot(A[i + 1] - 1, A[i + 2])); return m; };
+  res.taffyEnd = secR(gt, 0.03); res.taffyMid = secR(gt, L / 2); res.roundMid = secR(g, L / 2);
+  const gf = tubeGeometry(T, pts, pts.map(() => r), { profile: 'flat', up: new V3(0, 1, 0) }); { const A = gf.attributes.position.array; let dy = 0, dz = 0; for (let i = 0; i < A.length; i += 3) if (Math.abs(A[i] - L / 2) < 0.01) { dy = Math.max(dy, Math.abs(A[i + 1] - 1)); dz = Math.max(dz, Math.abs(A[i + 2])); } res.flatRatio = Math.max(dy, dz) / Math.max(1e-9, Math.min(dy, dz)); res.flatOpen = open(gf); }
+  const gb = tubeGeometry(T, pts, pts.map(() => r), { profile: 'beads' }); { const m = []; for (const x of [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]) m.push(secR(gb, x)); res.beadsRange = Math.max(...m) - Math.min(...m); res.beadsOpen = open(gb); }
+  const g1 = tubeGeometry(T, [new V3(0, 1, 0)], [0.03], {}); res.onePointOk = g1 && g1.index.count > 30 && Math.abs(vol(g1)) > 0 ? 1 : 0;
+  /* a loop in the path does not twist or break the mesh */
+  const loop = []; for (let i = 0; i < 80; i++) { const a = i / 79 * Math.PI * 2; loop.push(new V3(Math.cos(a) * 0.2, 1 + Math.sin(a) * 0.2, i * 0.002)); } const gl = tubeGeometry(T, loop, loop.map(() => 0.015), {}); res.loopOk = !Array.from(gl.attributes.position.array).some(x => !isFinite(x)) && Math.abs(vol(gl)) > 0 ? 1 : 0;
+  const cm = strokeCopies(T, pts, 'mirror', new V3(0, 0, 0), 6), cr = strokeCopies(T, pts, 'radial', new V3(0, 0, 0), 5), c0 = strokeCopies(T, pts, 'off', new V3(), 6);
+  res.copiesMirror = cm.length; res.mirrorX = cm.length === 2 ? Math.abs(cm[1].pts[10].x + pts[10].x) < 1e-9 ? 1 : 0 : 0; res.copiesRadial = cr.length; res.copiesOff = c0.length;
+  res.radialSpread = cr.length === 5 ? new Set(cr.map(c => Math.round(c.pts[29].x * 1000) + ',' + Math.round(c.pts[29].z * 1000))).size : 0;
+  window.__result = res; out.textContent = JSON.stringify(res, null, 1);
+} catch (e) { window.__result = { error: String(e.stack || e) }; out.textContent = window.__result.error; }
+</script>

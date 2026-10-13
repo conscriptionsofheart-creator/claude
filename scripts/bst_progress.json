@@ -1,0 +1,22 @@
+{
+ "items": [
+  {
+   "src": "/pe_lib/bst_progress_2026-10-10_3_atelier_sculpt_bench_360_belly_roll.png",
+   "caption": "The sculpt bench after three 360-degree Inflate strokes on the belly (simulated hand frames, not real hands): a soft thickening all the way round the waist, and the body mesh and the key both save. Known defect for the Atelier owner: once a shape key exists the Nebula skin shader shell stops showing, so the figure looks plain; the shell copies take the same key but the shader does not survive the morph.",
+   "date": "2026-10-10",
+   "file": "2026-10-10_3_atelier_sculpt_bench_360_belly_roll.png"
+  },
+  {
+   "src": "/pe_lib/bst_progress_2026-10-10_2_atelier_before_sculpt_bench.png",
+   "caption": "The Atelier before sculpting: the figure with its Nebula bloom skin shader on, the room and menus around it.",
+   "date": "2026-10-10",
+   "file": "2026-10-10_2_atelier_before_sculpt_bench.png"
+  },
+  {
+   "src": "/pe_lib/bst_progress_2026-10-10_1_weights_view_paint_skin.png",
+   "caption": "Paint skin on the default figure: the Weights view with the left elbow bone picked. Red is where that bone owns the skin (the forearm), blue where it owns none.",
+   "date": "2026-10-10",
+   "file": "2026-10-10_1_weights_view_paint_skin.png"
+  }
+ ]
+}

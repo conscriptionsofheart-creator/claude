@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>BST sculpt module self-test</title>
+<body style="font:14px system-ui;background:#120d1b;color:#f1ebe0"><pre id="o">running…</pre>
+<script type="module">
+/* ?three=128 loads lib/three.min.js (the Atelier's three.js); ?three=186 loads BST's. The module under test is the same file in both. */
+import { makeSculpt } from '/pe_lib/bst_sculpt_core.js';
+import { runChecks } from '/pe_lib/bst_sculpt_selftest.js';
+const v = new URLSearchParams(location.search).get('three') || '186';
+try {
+  let T;
+  if (v === '128') { await new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/pe_lib/three.min.js'; s.onload = ok; s.onerror = () => no(new Error('three.min.js missing')); document.head.appendChild(s); }); T = window.THREE; }
+  else T = await import('/pe_lib/bst_three_0.186.1.module.js');
+  window.__result = runChecks(T, makeSculpt); document.getElementById('o').textContent = JSON.stringify(window.__result, null, 1);
+} catch (e) { window.__result = { error: String(e.stack || e) }; document.getElementById('o').textContent = window.__result.error; }
+</script>

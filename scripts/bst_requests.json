@@ -1,0 +1,7 @@
+{
+ "about": "Who asked for a figure or object to be sculpted (BST send-back). A lane adds a row here, or asks BST to. Key: 'scene:<scene key>', 'file:<glb name without .glb>' or 'asset:<library id>'. The Send back tile in the sculpt menu appears when the open scene or figure matches a row; it saves the sculpt to the library and sends the picture and the library id to that lane's inbox.",
+ "rows": {
+  "scene:bst_leslie_mouth": {"lane": "FACES ROUND TWO | CF-20261009-1825", "what": "the mouth of the Leslie Knope head swap", "name": "Leslie Knope head swap mouth fixed", "proj": "studio", "how": "To look at it: open the glb above in the Atelier (Props > From the library) or load it as the figure file in a BSA scene. The jaw bone j22 and the cloth_* piece names are as in the figure you sent."},
+  "file:female_leslie_headswap_v3_face_anny": {"lane": "FACES ROUND TWO | CF-20261009-1825", "what": "the mouth of the Leslie Knope head swap", "name": "Leslie Knope head swap mouth fixed", "proj": "studio", "how": "To look at it: open the glb above in the Atelier (Props > From the library) or load it as the figure file in a BSA scene. The jaw bone j22 and the cloth_* piece names are as in the figure you sent."}
+ }
+}

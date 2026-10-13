@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><title>BST cave self-test</title>
+<script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script>
+<body style="font:14px system-ui;background:#120d1b;color:#f1ebe0"><pre id="o">running…</pre>
+<script type="module">
+/* ?three=128 or 186: a true boolean on a closed body: the stamp's faces become the walls of the space. Volumes are checked against exact numbers (a 1 m cube minus boxes), plus a group of two boxes as ONE cutter, a torus cave, intersect, and a sculpted (morphed) object used as the stamp. */
+import { stampGeometry, solidFromMesh, solidUnion } from '/pe_lib/bst_cut.js';
+const v = new URLSearchParams(location.search).get('three') || '186', out = document.getElementById('o');
+const load = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error(src + ' missing')); document.head.appendChild(s); });
+try {
+  let T;
+  if (v === '128') { await load('/pe_lib/three.min.js'); T = window.THREE; } else T = await import('/pe_lib/bst_three_0.186.1.module.js');
+  const V3 = T.Vector3, M4 = T.Matrix4, res = { revision: String(T.REVISION) };
+  const vol = g => { const A = g.attributes.position.array, I = g.index.array; let s = 0; for (let t = 0; t < I.length; t += 3) { const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3; s += (A[a] * (A[b + 1] * A[c + 2] - A[b + 2] * A[c + 1]) - A[a + 1] * (A[b] * A[c + 2] - A[b + 2] * A[c]) + A[a + 2] * (A[b] * A[c + 1] - A[b + 1] * A[c])) / 6; } return s; };
+  const mkBody = () => { const g = new T.BoxGeometry(1, 1, 1, 6, 6, 6), n = g.attributes.position.count, si = new Uint16Array(n * 4), sw = new Float32Array(n * 4); for (let i = 0; i < n; i++) { si[i * 4] = g.attributes.position.getX(i) > 0 ? 1 : 0; sw[i * 4] = 1; } g.setAttribute('skinIndex', new T.BufferAttribute(si, 4)); g.setAttribute('skinWeight', new T.BufferAttribute(sw, 4)); return g; };
+  const box = (x0, x1, y0, y1, z0, z1) => { const g = new T.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); return solidFromMesh(T, g, new M4().makeTranslation((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2)); };
+  const body = mkBody(), P0 = Float32Array.from(body.attributes.position.array), V0 = vol(body); res.cubeVol = Math.round(V0 * 1e6) / 1e6;
+  const edgeCheck = g => { const A = g.attributes.position.array, I = g.index.array, q = 1e-4, key = i => Math.round(A[i * 3] / q) + '_' + Math.round(A[i * 3 + 1] / q) + '_' + Math.round(A[i * 3 + 2] / q), E = new Map(); for (let t = 0; t < I.length; t += 3) for (let k = 0; k < 3; k++) { const a = key(I[t + k]), b = key(I[t + (k + 1) % 3]); if (a === b) continue; const e = a < b ? a + '|' + b : b + '|' + a; E.set(e, (E.get(e) || 0) + 1); } let bad = 0; E.forEach(c => { if (c !== 2) bad++; }); return bad; };
+  const run = (solid, keep) => { const t0 = performance.now(), r = stampGeometry(T, body, solid, { posed: P0, keep: keep || 'outside' }); return { r, ms: Math.round(performance.now() - t0) }; };
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+  /* 1. a cave fully inside */
+  let o = run(box(-0.15, 0.15, -0.15, 0.15, -0.15, 0.15)); res.caveOk = !!o.r; res.caveVol = Math.round(vol(o.r.geometry) * 1e6) / 1e6; res.caveVolRight = near(vol(o.r.geometry), V0 - 0.027, 2e-5) ? 1 : 0; res.caveLining = o.r.lining; res.caveEdgesBad = edgeCheck(o.r.geometry); res.caveMs = o.ms;
+  /* 2. a box through the front wall: a hole with walls */
+  o = run(box(0.2, 0.8, -0.1, 0.1, -0.1, 0.1)); res.wallVol = Math.round(vol(o.r.geometry) * 1e6) / 1e6; res.wallVolRight = near(vol(o.r.geometry), V0 - 0.012, 4e-5) ? 1 : 0; res.wallLining = o.r.lining; res.wallMs = o.ms;
+  /* 3. a GROUP of two overlapping boxes as one cutter */
+  const grp = solidUnion(T, [box(0.1, 0.7, -0.1, 0.1, -0.1, 0.1), box(0.3, 0.45, -0.1, 0.45, -0.1, 0.1)]); res.groupFaces = grp.tris.length;
+  o = run(grp); res.groupVol = Math.round(vol(o.r.geometry) * 1e6) / 1e6; res.groupVolRight = near(vol(o.r.geometry), V0 - 0.0265, 6e-5) ? 1 : 0; res.groupMs = o.ms;
+  /* 4. a ring (not convex, with a hole) as a cave */
+  const tor = new T.TorusGeometry(0.2, 0.05, 12, 24), tsol = solidFromMesh(T, tor, new M4()); o = run(tsol); res.torusCaveVolRight = near(vol(o.r.geometry), V0 - tsol.volume, 1e-4) ? 1 : 0; res.torusEdgesBad = edgeCheck(o.r.geometry);
+  /* 5. intersect: only what the box and the body share */
+  o = run(box(0.2, 0.8, -0.1, 0.1, -0.1, 0.1), 'inside'); res.interVol = Math.round(vol(o.r.geometry) * 1e6) / 1e6; res.interVolRight = near(vol(o.r.geometry), 0.012, 4e-5) ? 1 : 0;
+  /* 6. a bare hole (no walls) when lining is off */
+  const bare = stampGeometry(T, body, box(0.2, 0.8, -0.1, 0.1, -0.1, 0.1), { posed: P0, lining: false }); res.bareNoWalls = bare && bare.lining === 0 ? 1 : 0;
+  /* 7. a sculpted object as the stamp: a box with a shape key that doubles it, taken at influence 1 */
+  const sg = new T.BoxGeometry(0.2, 0.2, 0.2), sp = sg.attributes.position, eff = new Float32Array(sp.count * 3); for (let i = 0; i < sp.count; i++) { eff[i * 3] = sp.getX(i) * 2; eff[i * 3 + 1] = sp.getY(i) * 2; eff[i * 3 + 2] = sp.getZ(i) * 2; }
+  res.sculptVol = Math.round(solidFromMesh(T, sg, new M4(), eff).volume * 1e6) / 1e6; res.sculptRight = near(solidFromMesh(T, sg, new M4(), eff).volume, 0.4 ** 3, 1e-6) ? 1 : 0;
+  /* 8. the skin of the walls comes from the body: weights sum to one, indices valid */
+  const g = (run(box(-0.15, 0.15, -0.15, 0.15, -0.15, 0.15))).r.geometry; let ws = 0; for (let i = 0; i < g.attributes.skinWeight.count; i++) ws += g.attributes.skinWeight.array[i * 4]; res.wallSkinOk = Math.abs(ws - g.attributes.skinWeight.count) < 1e-3 ? 1 : 0;
+  const n = g.attributes.position.count, I = g.index.array; let okI = 1; for (let i = 0; i < I.length; i++) if (I[i] >= n) okI = 0; res.valid = okI;
+  window.__result = res; out.textContent = JSON.stringify(res, null, 1);
+} catch (e) { window.__result = { error: String(e.stack || e) }; out.textContent = window.__result.error; }
+</script>

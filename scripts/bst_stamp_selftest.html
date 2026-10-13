@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><title>BST stamp self-test</title>
+<script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script>
+<body style="font:14px system-ui;background:#120d1b;color:#f1ebe0"><pre id="o">running…</pre>
+<script type="module">
+/* ?three=128 or 186: stampGeometry subtracts any closed object (a torus: not convex, with a hole) from a skinned, keyed cylinder and from the real figure; intersect keeps only the inside. */
+import { stampGeometry, solidFromMesh } from '/pe_lib/bst_cut.js';
+const v = new URLSearchParams(location.search).get('three') || '186', out = document.getElementById('o');
+const load = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error(src + ' missing')); document.head.appendChild(s); });
+try {
+  let T, Loader;
+  if (v === '128') { await load('/pe_lib/three.min.js'); await load('/pe_lib/GLTFLoader.js'); T = window.THREE; Loader = T.GLTFLoader; }
+  else { T = await import('/pe_lib/bst_three_0.186.1.module.js'); Loader = (await import('/pe_lib/bst_three_gltfloader_0.186.1.js')).GLTFLoader; }
+  const V3 = T.Vector3, M4 = T.Matrix4, res = { revision: String(T.REVISION) };
+  const valid = g => { const n = g.attributes.position.count, I = g.index.array; for (let i = 0; i < I.length; i++) if (I[i] >= n) return false; for (const k in g.attributes) if (g.attributes[k].count !== n) return false; for (const m of (g.morphAttributes.position || [])) if (m.count !== n) return false; return true; };
+  /* the stamp: a torus round the y axis (ring radius 0.1, tube 0.03), lying flat: tube centre circle in the xz plane at y = 0.1 */
+  const tor = new T.TorusGeometry(0.1, 0.03, 16, 40); tor.rotateX(Math.PI / 2); const stampM = new M4().makeTranslation(0, 0.1, 0);
+  const sol = solidFromMesh(T, tor, stampM); res.torusClosed = sol.closed ? 1 : 0; res.torusTris = sol.tris.length; res.torusVolume = Math.round(sol.volume * 1e6) / 1e6;
+  const plane = new T.PlaneGeometry(1, 1); res.planeClosed = solidFromMesh(T, plane, new M4()).closed ? 1 : 0;
+  const flipped = tor.clone(); const fi = flipped.index.array; for (let i = 0; i < fi.length; i += 3) { const x = fi[i + 1]; fi[i + 1] = fi[i + 2]; fi[i + 2] = x; } res.flippedFixed = solidFromMesh(T, flipped, stampM).tris[0][0].distanceTo(sol.tris[0][0]) < 1e-6 ? 1 : 0;   /* an inside-out object is turned the right way round */
+  const cyl = new T.CylinderGeometry(0.1, 0.1, 1, 32, 40), n0 = cyl.attributes.position.count;
+  const si = new Uint16Array(n0 * 4), sw = new Float32Array(n0 * 4); for (let i = 0; i < n0; i++) { si[i * 4] = cyl.attributes.position.getY(i) > 0 ? 1 : 0; sw[i * 4] = 1; }
+  cyl.setAttribute('skinIndex', new T.BufferAttribute(si, 4)); cyl.setAttribute('skinWeight', new T.BufferAttribute(sw, 4));
+  const key = new Float32Array(n0 * 3); for (let i = 0; i < n0; i++) key[i * 3] = 0.01 * cyl.attributes.position.getY(i); const ka = new T.BufferAttribute(key, 3); ka.name = 'Shape 1'; cyl.morphAttributes.position = [ka]; cyl.morphTargetsRelative = true;
+  const P0 = Float32Array.from(cyl.attributes.position.array), tube = (x, y, z) => Math.hypot(Math.hypot(x, z) - 0.1, y - 0.1);   /* distance from the torus's core circle */
+  const t0 = performance.now(), r = stampGeometry(T, cyl, sol, { posed: P0, keep: 'outside' }); res.ms = Math.round(performance.now() - t0); res.sub = !!r;
+  const g = r.geometry; res.valid = valid(g) ? 1 : 0; let md = 1e9; for (let i = 0; i < r.posed.length; i += 3) md = Math.min(md, tube(r.posed[i], r.posed[i + 1], r.posed[i + 2])); res.minTube = Math.round(md * 1e4) / 1e4;
+  res.outsideTube = md >= 0.03 - 0.0015 ? 1 : 0;   /* nothing left inside the ring's body (the tube is a 16-sided polygon, a little inside the true circle) */
+  let inTube = 0; for (let i = 0; i < P0.length; i += 3) if (tube(P0[i], P0[i + 1], P0[i + 2]) < 0.03) inTube++; res.bandRemoved = inTube > 20 && md >= 0.03 - 0.0015 ? 1 : 0;   /* plenty of the skin was inside the ring's tube, and none is now */
+  let wsum = 0; for (let i = 0; i < g.attributes.skinWeight.count; i++) wsum += g.attributes.skinWeight.array[i * 4]; res.weightsOne = Math.abs(wsum - g.attributes.skinWeight.count) < 1e-4 ? 1 : 0;
+  const M = g.morphAttributes.position[0].array, A = g.attributes.position.array; let kOk = 1; for (let i = 0; i < g.attributes.position.count; i++) { if (Math.abs(tube(A[i * 3], A[i * 3 + 1], A[i * 3 + 2]) - 0.03) < 1.5e-3) continue; /* a wall point: new skin, no key */ if (Math.abs(M[i * 3] - 0.01 * A[i * 3 + 1]) > 3e-4) { kOk = 0; break; } } res.keyCarried = kOk;
+  /* the torus's hole: skin at the cylinder wall's far side from the ring (y = 0.3) is untouched, and so is skin inside the ring's own hole if any (the wall is at radius 0.1 = the ring's core, so the whole band within 0.03 goes) */
+  let farKept = 0; for (let i = 0; i < r.posed.length; i += 3) if (Math.abs(r.posed[i + 1] - 0.3) < 0.01) farKept++; res.farKept = farKept > 20 ? 1 : 0;
+  const ri = stampGeometry(T, cyl, sol, { posed: P0, keep: 'inside' }); res.int = !!ri; let mx = 0; if (ri) for (let i = 0; i < ri.posed.length; i += 3) mx = Math.max(mx, tube(ri.posed[i], ri.posed[i + 1], ri.posed[i + 2])); res.intMaxTube = Math.round(mx * 1e4) / 1e4; res.intInside = ri && mx <= 0.03 + 0.0015 && valid(ri.geometry) ? 1 : 0;
+  const far = new M4().makeTranslation(0, 3, 0); res.missNull = stampGeometry(T, cyl, solidFromMesh(T, tor, far), { posed: P0, keep: 'outside' }) === null ? 1 : 0;
+  /* the real figure: the torus (scaled to 6 cm ring) pressed on the belly */
+  const buf = await (await fetch('/pe_lib/female.glb')).arrayBuffer(); const gltf = await new Promise((ok, no) => new Loader().parse(buf, '', ok, no)); let mesh = null;
+  gltf.scene.traverse(o => { if (o.isSkinnedMesh && (!mesh || o.geometry.attributes.position.count > mesh.geometry.attributes.position.count)) mesh = o; });
+  const fg = mesh.geometry, FP = Float32Array.from(fg.attributes.position.array), nn = FP.length / 3; let top = -1e9, bot = 1e9; for (let i = 0; i < nn; i++) { top = Math.max(top, FP[i * 3 + 1]); bot = Math.min(bot, FP[i * 3 + 1]); }
+  const yb = bot + (top - bot) * 0.57; let bi = -1, mz = -1e9; for (let i = 0; i < nn; i++) if (Math.abs(FP[i * 3 + 1] - yb) < 0.02 && FP[i * 3 + 2] > mz && Math.abs(FP[i * 3]) < 0.05) { mz = FP[i * 3 + 2]; bi = i; }
+  const sm = new M4().compose(new V3(FP[bi * 3], FP[bi * 3 + 1], FP[bi * 3 + 2] - 0.01), new T.Quaternion().setFromAxisAngle(new V3(1, 0, 0), Math.PI / 2 - Math.PI / 2), new V3(0.5, 0.5, 0.5));   /* ring in the xz plane would lie flat on the skin edge-on; stand it up facing front */
+  const sm2 = new M4().compose(new V3(FP[bi * 3], FP[bi * 3 + 1], FP[bi * 3 + 2] - 0.01), new T.Quaternion().setFromAxisAngle(new V3(1, 0, 0), Math.PI / 2), new V3(0.5, 0.5, 0.5));
+  const fs = solidFromMesh(T, tor, sm2); const t1 = performance.now(), fr = stampGeometry(T, fg, fs, { posed: FP, keep: 'outside' }); res.figMs = Math.round(performance.now() - t1); res.figStamped = !!fr;
+  if (fr) { const G = fr.geometry; res.figValid = valid(G) ? 1 : 0; res.figHasSkin = G.attributes.skinIndex ? 1 : 0; res.figTrisBefore = fg.index.count / 3; res.figTrisAfter = G.index.count / 3;
+    const mm = new T.SkinnedMesh(G, mesh.material); mm.bind(mesh.skeleton, mesh.bindMatrix); mesh.skeleton.update(); let rz = 'ok'; try { const rr = new T.WebGLRenderer(); const sc = new T.Scene(); sc.add(mm); sc.add(mesh.skeleton.bones[0]); rr.render(sc, new T.PerspectiveCamera()); } catch (e) { rz = String(e.message); } res.figRender = rz === 'ok' ? 1 : rz; }
+  window.__result = res; out.textContent = JSON.stringify(res, null, 1);
+} catch (e) { window.__result = { error: String(e.stack || e) }; out.textContent = window.__result.error; }
+</script>

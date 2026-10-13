@@ -1,0 +1,60 @@
+<!doctype html><meta charset="utf-8"><title>BST cut self-test</title>
+<script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script>
+<body style="font:14px system-ui;background:#120d1b;color:#f1ebe0"><pre id="o">running…</pre>
+<script type="module">
+/* ?three=128 or 186: cutGeometry on a closed cylinder with shape keys and skin attributes, then on the real figure (lib/female.glb): half the volume goes, the cap closes it, attributes and keys stay in step, indices are valid. */
+import { cutGeometry, eraseGeometry, healGeometry } from '/pe_lib/bst_cut.js';
+const v = new URLSearchParams(location.search).get('three') || '186', out = document.getElementById('o');
+const load = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error(src + ' missing')); document.head.appendChild(s); });
+try {
+  let T, Loader;
+  if (v === '128') { await load('/pe_lib/three.min.js'); await load('/pe_lib/GLTFLoader.js'); T = window.THREE; Loader = T.GLTFLoader; }
+  else { T = await import('/pe_lib/bst_three_0.186.1.module.js'); Loader = (await import('/pe_lib/bst_three_gltfloader_0.186.1.js')).GLTFLoader; }
+  const V3 = T.Vector3, res = { revision: String(T.REVISION) };
+  const vol = g => { const A = g.attributes.position.array, I = g.index.array; let s = 0; for (let t = 0; t < I.length; t += 3) { const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3; s += (A[a] * (A[b + 1] * A[c + 2] - A[b + 2] * A[c + 1]) - A[a + 1] * (A[b] * A[c + 2] - A[b + 2] * A[c]) + A[a + 2] * (A[b] * A[c + 1] - A[b + 1] * A[c])) / 6; } return s; };
+  const valid = g => { const n = g.attributes.position.count, I = g.index.array; for (let i = 0; i < I.length; i++) if (I[i] >= n) return false; for (const k in g.attributes) if (g.attributes[k].count !== n) return false; for (const m of (g.morphAttributes.position || [])) if (m.count !== n) return false; return true; };
+  /* 1. a closed cylinder with a skin and one shape key */
+  const cyl = new T.CylinderGeometry(0.1, 0.1, 1, 24, 20); const n = cyl.attributes.position.count;
+  const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4); for (let i = 0; i < n; i++) { const up = cyl.attributes.position.getY(i) > 0; si[i * 4] = up ? 1 : 0; sw[i * 4] = 1; }
+  cyl.setAttribute('skinIndex', new T.BufferAttribute(si, 4)); cyl.setAttribute('skinWeight', new T.BufferAttribute(sw, 4));
+  const key = new Float32Array(n * 3); for (let i = 0; i < n; i++) key[i * 3] = 0.01 * cyl.attributes.position.getY(i); const ka = new T.BufferAttribute(key, 3); ka.name = 'Shape 1'; cyl.morphAttributes.position = [ka]; cyl.morphTargetsRelative = true;
+  const v0 = Math.abs(vol(cyl)), r = cutGeometry(T, cyl, { n: new V3(0, 1, 0), d: 0.1 }, { keep: 'back' });
+  res.cylOk = !!r; const g = r.geometry; res.cylValid = valid(g) ? 1 : 0;
+  const A = g.attributes.position.array; let maxY = -9, minY = 9; for (let i = 0; i < A.length; i += 3) { maxY = Math.max(maxY, A[i + 1]); minY = Math.min(minY, A[i + 1]); }
+  res.cylMaxY = Math.round(maxY * 1000) / 1000; res.cylMinY = Math.round(minY * 1000) / 1000;
+  res.cylVolRatio = Math.round(Math.abs(vol(g)) / v0 * 100) / 100;   /* a cut at y=0.1 of a -0.5..0.5 cylinder keeps 0.6 of it */
+  res.cylCapped = r.capped; res.cylKeys = g.morphAttributes.position.length; res.cylSkin = g.attributes.skinIndex.array.constructor.name + g.attributes.skinWeight.count;
+  let wsum = 0; for (let i = 0; i < g.attributes.skinWeight.count; i++) wsum += g.attributes.skinWeight.array[i * 4]; res.cylWeightsOne = Math.abs(wsum - g.attributes.skinWeight.count) < 1e-4 ? 1 : 0;
+  /* the key was carried: its delta at a new point on the cut equals 0.01 * y there */
+  let keyOk = 1; const M = g.morphAttributes.position[0].array; for (let i = 0; i < g.attributes.position.count; i++) { const e = 0.01 * A[i * 3 + 1]; if (Math.abs(M[i * 3] - e) > 2e-4 && Math.abs(M[i * 3]) > 1e-9 + Math.abs(e) * 2) { keyOk = 0; break; } } res.cylKeyCarried = keyOk;
+  /* cap normals face the way the removed part was (+y) and every cap triangle winds that way too */
+  const N = g.attributes.normal.array, I = g.index.array; let capUp = 0, capAll = 0; for (let t = 0; t < I.length; t += 3) { const ys = [0, 1, 2].map(k => A[I[t + k] * 3 + 1]); if (ys.every(y => Math.abs(y - 0.1) < 1e-5)) { capAll++; const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3; const e1 = new V3(A[b] - A[a], A[b + 1] - A[a + 1], A[b + 2] - A[a + 2]), e2 = new V3(A[c] - A[a], A[c + 1] - A[a + 1], A[c + 2] - A[a + 2]); if (e1.cross(e2).y > 0) capUp++; } } res.capTris = capAll; res.capFacesOut = capAll > 0 && capUp === capAll ? 1 : 0;
+  res.missNull = cutGeometry(T, cyl, { n: new V3(0, 1, 0), d: 5 }, { keep: 'back' }) === null ? 1 : 0;
+  const k2 = cutGeometry(T, cyl, { n: new V3(0, 1, 0), d: 0.1 }, { keep: 'front' }); res.frontKept = k2 && Math.abs(vol(k2.geometry)) / v0 > 0.35 && Math.abs(vol(k2.geometry)) / v0 < 0.45 ? 1 : 0;
+  /* 1b. cut with no lid, and Erase */
+  const open = cutGeometry(T, cyl, { n: new V3(0, 1, 0), d: 0.1 }, { keep: 'back', cap: false }); res.openCapped = open ? open.capped : -1; res.openTris = open ? open.geometry.index.count / 3 : 0; res.closedTris = r.geometry.index.count / 3;
+  const er = eraseGeometry(T, cyl, { c: new V3(0.1, 0, 0), r: 0.25 }, {}); res.eraseOk = !!er;
+  if (er) { const eg = er.geometry; res.eraseRemoved = er.removed; res.eraseTrisBefore = cyl.index.count / 3; res.eraseTrisAfter = eg.index.count / 3; res.eraseSamePoints = eg.attributes.position === cyl.attributes.position ? 1 : 0; res.eraseKeys = eg.morphAttributes.position.length; res.eraseSkin = eg.attributes.skinIndex ? 1 : 0; res.eraseNewId = eg.id !== cyl.id ? 1 : 0;
+    let near = 0; const EA = eg.attributes.position.array, EI = eg.index.array; for (let t = 0; t < EI.length; t += 3) { const x = (EA[EI[t] * 3] + EA[EI[t + 1] * 3] + EA[EI[t + 2] * 3]) / 3, y = (EA[EI[t] * 3 + 1] + EA[EI[t + 1] * 3 + 1] + EA[EI[t + 2] * 3 + 1]) / 3, z = (EA[EI[t] * 3 + 2] + EA[EI[t + 1] * 3 + 2] + EA[EI[t + 2] * 3 + 2]) / 3; if ((x - 0.1) ** 2 + y * y + z * z <= 0.0625) near++; } res.eraseLeftInside = near; }
+  res.eraseMiss = eraseGeometry(T, cyl, { c: new V3(9, 9, 9), r: 0.2 }, {}) === null ? 1 : 0;
+  /* 1c. Heal edge: a ragged rim gets smoother and gets the missing triangles; Close fills it */
+  { const og = cutGeometry(T, cyl, { n: new V3(0, 1, 0), d: 0.12 }, { keep: 'back', cap: false }).geometry.clone(); const OA = og.attributes.position.array; let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
+    const rimIdx = []; for (let i = 0; i < og.attributes.position.count; i++) if (Math.abs(OA[i * 3 + 1] - 0.12) < 1e-5) rimIdx.push(i);
+    const jit = new Map(); rimIdx.forEach(i => { const k = Math.round(OA[i * 3] * 1e4) + '_' + Math.round(OA[i * 3 + 2] * 1e4); if (!jit.has(k)) jit.set(k, rnd() * 0.03); const f = 1 + jit.get(k); OA[i * 3] *= f; OA[i * 3 + 2] *= f; });
+    const rough = G => { const A2 = G.attributes.position.array, I2 = G.index.array; const rs = []; const seen = new Set(); for (let t = 0; t < I2.length; t++) { const i = I2[t]; if (Math.abs(A2[i * 3 + 1] - 0.12) < 0.02 && !seen.has(i)) { seen.add(i); rs.push(Math.hypot(A2[i * 3], A2[i * 3 + 2])); } } const m = rs.reduce((a, b) => a + b, 0) / rs.length; return Math.sqrt(rs.reduce((a, b) => a + (b - m) ** 2, 0) / rs.length) / m; };
+    const edgesOpen = G => { const I2 = G.index.array, A2 = G.attributes.position.array, key = i => Math.round(A2[i * 3] * 1e4) + '_' + Math.round(A2[i * 3 + 1] * 1e4) + '_' + Math.round(A2[i * 3 + 2] * 1e4), cnt = new Map(); for (let t = 0; t < I2.length; t += 3) for (let k = 0; k < 3; k++) { const a = key(I2[t + k]), b = key(I2[t + (k + 1) % 3]), kk = a < b ? a + '|' + b : b + '|' + a; cnt.set(kk, (cnt.get(kk) || 0) + 1); } let o = 0; cnt.forEach(v => { if (v === 1) o++; }); return o; };
+    res.healRoughBefore = rough(og); res.healOpenBefore = edgesOpen(og);
+    const hr = healGeometry(T, og, { c: new V3(0, 0.12, 0), r: 0.5 }, { split: 0.008 }); res.healOk = !!hr;
+    if (hr) { const G = hr.geometry; res.healSplit = hr.split; res.healMoved = hr.moved; res.healRoughAfter = rough(G); res.healTrisBefore = og.index.count / 3; res.healTrisAfter = G.index.count / 3; res.healKeys = G.morphAttributes.position.length; res.healSkin = G.attributes.skinIndex.count === G.attributes.position.count && G.attributes.skinWeight.count === G.attributes.position.count ? 1 : 0; res.healKeyLen = G.morphAttributes.position[0].count === G.attributes.position.count ? 1 : 0; res.healNaN = Array.from(G.attributes.position.array).some(x => !isFinite(x)) ? 1 : 0; res.healStillOpen = edgesOpen(G); }
+    const cl = healGeometry(T, og, { c: new V3(0, 0.12, 0), r: 0.5 }, { mode: 'close' }); res.closeOk = !!cl; if (cl) { res.closeOpenAfter = edgesOpen(cl.geometry); res.closeClosed = cl.closed; res.closeKeyLen = cl.geometry.morphAttributes.position[0].count === cl.geometry.attributes.position.count ? 1 : 0; }
+    res.healMiss = healGeometry(T, og, { c: new V3(0, -0.4, 0), r: 0.05 }, { split: 0.008 }) === null ? 1 : 0; }
+  /* 2. the real figure: cut across the left thigh */
+  const buf = await (await fetch('/pe_lib/female.glb')).arrayBuffer(); const gltf = await new Promise((ok, no) => new Loader().parse(buf, '', ok, no)); let mesh = null;
+  gltf.scene.traverse(o => { if (o.isSkinnedMesh && (!mesh || o.geometry.attributes.position.count > mesh.geometry.attributes.position.count)) mesh = o; });
+  const fg = mesh.geometry; fg.computeBoundingBox(); const bb = fg.boundingBox, y = bb.min.y + (bb.max.y - bb.min.y) * 0.28;   /* about mid thigh */
+  const fr = cutGeometry(T, fg, { n: new V3(0, 1, 0), d: y }, { keep: 'front' });
+  res.figCut = !!fr; if (fr) { const G = fr.geometry; res.figValid = valid(G) ? 1 : 0; res.figHasSkin = G.attributes.skinIndex && G.attributes.skinWeight ? 1 : 0; res.figCaps = fr.capped; res.figTrisBefore = fg.index.count / 3; res.figTrisAfter = G.index.count / 3; G.computeBoundingBox(); res.figMinY = Math.round(G.boundingBox.min.y * 100) / 100; res.figCutY = Math.round(y * 100) / 100;
+    const mm = new T.SkinnedMesh(G, mesh.material); mm.bind(mesh.skeleton, mesh.bindMatrix); mesh.skeleton.update(); let rz = 'ok'; try { const rr = new T.WebGLRenderer(); const sc = new T.Scene(); sc.add(mm); sc.add(mesh.skeleton.bones[0]); rr.render(sc, new T.PerspectiveCamera()); } catch (e) { rz = String(e.message); } res.figRender = rz === 'ok' ? 1 : rz; }
+  window.__result = res; out.textContent = JSON.stringify(res, null, 1);
+} catch (e) { window.__result = { error: String(e.stack || e) }; out.textContent = window.__result.error; }
+</script>

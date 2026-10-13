@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><title>BST carve self-test</title>
+<script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script>
+<body style="font:14px system-ui;background:#120d1b;color:#f1ebe0"><pre id="o">running…</pre>
+<script type="module">
+/* ?three=128 or 186: carveGeometry subtracts a ball from a skinned, keyed surface and keeps only the inside for intersect. */
+import { carveGeometry } from '/pe_lib/bst_cut.js';
+const v = new URLSearchParams(location.search).get('three') || '186', out = document.getElementById('o');
+const load = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error(src + ' missing')); document.head.appendChild(s); });
+try {
+  let T, Loader;
+  if (v === '128') { await load('/pe_lib/three.min.js'); await load('/pe_lib/GLTFLoader.js'); T = window.THREE; Loader = T.GLTFLoader; }
+  else { T = await import('/pe_lib/bst_three_0.186.1.module.js'); Loader = (await import('/pe_lib/bst_three_gltfloader_0.186.1.js')).GLTFLoader; }
+  const V3 = T.Vector3, res = { revision: String(T.REVISION) };
+  const valid = g => { const n = g.attributes.position.count, I = g.index.array; for (let i = 0; i < I.length; i++) if (I[i] >= n) return false; for (const k in g.attributes) if (g.attributes[k].count !== n) return false; for (const m of (g.morphAttributes.position || [])) if (m.count !== n) return false; return true; };
+  const posedOf = g => Float32Array.from(g.attributes.position.array);
+  const cyl = new T.CylinderGeometry(0.1, 0.1, 1, 24, 20), n0 = cyl.attributes.position.count;
+  const si = new Uint16Array(n0 * 4), sw = new Float32Array(n0 * 4); for (let i = 0; i < n0; i++) { si[i * 4] = cyl.attributes.position.getY(i) > 0 ? 1 : 0; sw[i * 4] = 1; }
+  cyl.setAttribute('skinIndex', new T.BufferAttribute(si, 4)); cyl.setAttribute('skinWeight', new T.BufferAttribute(sw, 4));
+  const key = new Float32Array(n0 * 3); for (let i = 0; i < n0; i++) key[i * 3] = 0.01 * cyl.attributes.position.getY(i); const ka = new T.BufferAttribute(key, 3); ka.name = 'Shape 1'; cyl.morphAttributes.position = [ka]; cyl.morphTargetsRelative = true;
+  const ball = { c: new V3(0.1, 0.05, 0), r: 0.08 }, tris0 = cyl.index.count / 3, P0 = posedOf(cyl);
+  const t0 = performance.now(), r = carveGeometry(T, cyl, ball, { posed: P0, keep: 'outside' }); res.cylMs = Math.round(performance.now() - t0);
+  res.sub = !!r; const g = r.geometry; res.subValid = valid(g) ? 1 : 0;
+  let minD = 1e9; for (let i = 0; i < r.posed.length; i += 3) minD = Math.min(minD, Math.hypot(r.posed[i] - ball.c.x, r.posed[i + 1] - ball.c.y, r.posed[i + 2] - ball.c.z)); res.subMinDist = Math.round(minD * 1000) / 1000;
+  res.subHoleBigEnough = minD >= ball.r - 0.002 ? 1 : 0; res.subHoleNotHuge = minD <= ball.r * 1.08 ? 1 : 0;   /* a vertex sits on the hole's rim, between r and the round solid's corner */
+  res.subVerts = g.attributes.position.count; res.subVertsBefore = n0; res.subKeys = g.morphAttributes.position.length;
+  let wsum = 0; for (let i = 0; i < g.attributes.skinWeight.count; i++) wsum += g.attributes.skinWeight.array[i * 4]; res.subWeightsOne = Math.abs(wsum - g.attributes.skinWeight.count) < 1e-4 ? 1 : 0;
+  const M = g.morphAttributes.position[0].array, A = g.attributes.position.array; let kOk = 1; for (let i = 0; i < g.attributes.position.count; i++) if (Math.abs(M[i * 3] - 0.01 * A[i * 3 + 1]) > 3e-4) { kOk = 0; break; } res.subKeyCarried = kOk;
+  res.subFarUntouched = (g.index.count / 3) > tris0 - 40 ? 1 : 0;   /* only the triangles near the ball change */
+  res.missNull = carveGeometry(T, cyl, { c: new V3(3, 3, 3), r: 0.05 }, { posed: P0, keep: 'outside' }) === null ? 1 : 0;
+  const ri = carveGeometry(T, cyl, ball, { posed: P0, keep: 'inside' }); res.int = !!ri; let maxD = 0; for (let i = 0; i < ri.posed.length; i += 3) maxD = Math.max(maxD, Math.hypot(ri.posed[i] - ball.c.x, ri.posed[i + 1] - ball.c.y, ri.posed[i + 2] - ball.c.z)); res.intMaxDist = Math.round(maxD * 1000) / 1000; res.intInside = maxD <= ball.r * 1.08 && ri.geometry.index.count > 0 && valid(ri.geometry) ? 1 : 0;
+  /* the real figure: a ball of 6 cm on the belly */
+  const buf = await (await fetch('/pe_lib/female.glb')).arrayBuffer(); const gltf = await new Promise((ok, no) => new Loader().parse(buf, '', ok, no)); let mesh = null;
+  gltf.scene.traverse(o => { if (o.isSkinnedMesh && (!mesh || o.geometry.attributes.position.count > mesh.geometry.attributes.position.count)) mesh = o; });
+  const fg = mesh.geometry, FP = posedOf(fg), nn = FP.length / 3; let top = -1e9, bot = 1e9; for (let i = 0; i < nn; i++) { top = Math.max(top, FP[i * 3 + 1]); bot = Math.min(bot, FP[i * 3 + 1]); }
+  const yb = bot + (top - bot) * 0.57; let bi = -1, mz = -1e9; for (let i = 0; i < nn; i++) if (Math.abs(FP[i * 3 + 1] - yb) < 0.02 && FP[i * 3 + 2] > mz && Math.abs(FP[i * 3]) < 0.05) { mz = FP[i * 3 + 2]; bi = i; }
+  const bb = { c: new V3(FP[bi * 3], FP[bi * 3 + 1], FP[bi * 3 + 2] - 0.01), r: 0.06 }; const t1 = performance.now(), fr = carveGeometry(T, fg, bb, { posed: FP, keep: 'outside' }); res.figMs = Math.round(performance.now() - t1);
+  res.figCarved = !!fr; if (fr) { const G = fr.geometry; res.figValid = valid(G) ? 1 : 0; res.figHasSkin = G.attributes.skinIndex ? 1 : 0; res.figTrisBefore = fg.index.count / 3; res.figTrisAfter = G.index.count / 3; res.figVertsBefore = nn; res.figVertsAfter = G.attributes.position.count;
+    let md = 1e9; for (let i = 0; i < fr.posed.length; i += 3) md = Math.min(md, Math.hypot(fr.posed[i] - bb.c.x, fr.posed[i + 1] - bb.c.y, fr.posed[i + 2] - bb.c.z)); res.figMinDist = Math.round(md * 1000) / 1000;
+    const mm = new T.SkinnedMesh(G, mesh.material); mm.bind(mesh.skeleton, mesh.bindMatrix); mesh.skeleton.update(); let rz = 'ok'; try { const rr = new T.WebGLRenderer(); const sc = new T.Scene(); sc.add(mm); sc.add(mesh.skeleton.bones[0]); rr.render(sc, new T.PerspectiveCamera()); } catch (e) { rz = String(e.message); } res.figRender = rz === 'ok' ? 1 : rz; }
+  window.__result = res; out.textContent = JSON.stringify(res, null, 1);
+} catch (e) { window.__result = { error: String(e.stack || e) }; out.textContent = window.__result.error; }
+</script>
