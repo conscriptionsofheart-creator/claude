@@ -102,7 +102,52 @@ const MAX_SAMPLES = 900000;   /* about 3.6 MB of distances: a bigger box would s
 
 /* a shape: dist(x, y, z) is its signed distance in metres; mode 'add' (soft union with blend k), 'subtract', 'intersect' (only inside the box: the caller handles the rest of the layer), 'paint' (colour only, inside the shape).
    color [r, g, b] is what added clay or paint becomes; amount 0..1 how strongly paint covers. */
+/* in place, brick by brick: a brick the shape cannot reach is never read (the distance is 1-Lipschitz, so the distance at a brick's middle minus half its diagonal bounds every sample in it),
+   and a brick is copied for undo and made solid only when a sample in it really changes. This is the hot path of every clay stroke, shape and saw pass. */
 export function opShape(f, lo, hi, dist, mode, k, color, snap, amount) {
+  const pad = Math.ceil((f.band + k) / f.h) + 1, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, pad); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const h = f.h, h2 = h * 2, band = f.band, a = amount == null ? 1 : amount, half = 3.5 * h * Math.sqrt(3), reach = mode === 'paint' ? 0 : band + k, base = f.base;
+  const bx0 = Math.floor(i0 / B), by0 = Math.floor(j0 / B), bz0 = Math.floor(k0 / B), bx1 = Math.floor((i0 + nx - 1) / B), by1 = Math.floor((j0 + ny - 1) / B), bz1 = Math.floor((k0 + nz - 1) / B);
+  let changed = false, ci0 = 1e9, cj0 = 1e9, ck0 = 1e9, ci1 = -1e9, cj1 = -1e9, ck1 = -1e9;
+  for (let bz = bz0; bz <= bz1; bz++) for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+    const dc = dist((bx * B + 3.5) * h, (by * B + 3.5) * h, (bz * B + 3.5) * h); if (dc - half > reach) continue;
+    const key = bkey(bx, by, bz); let br = f.bricks.get(key);
+    if (mode === 'subtract' && !br) continue; if (mode === 'paint' && (!br || br === INSIDE)) continue; if (mode === 'add' && br === INSIDE) continue;
+    const whole = bx * B >= i0 && by * B >= j0 && bz * B >= k0 && bx * B + B <= i0 + nx && by * B + B <= j0 + ny && bz * B + B <= k0 + nz;
+    if (whole && dc + half < -band - k && (mode === 'add' || mode === 'subtract')) {   /* the whole brick lies deep inside the tool: it becomes solid (add) or air (subtract) in one step, no sample by sample */
+      if (snap && !snap.has(key)) snap.set(key, !br || br === INSIDE ? br : { d: br.d.slice(), c: br.c.slice() });
+      if (mode === 'add') f.bricks.set(key, INSIDE); else f.bricks.delete(key); changed = true;
+      if (bx * B < ci0) ci0 = bx * B; if (by * B < cj0) cj0 = by * B; if (bz * B < ck0) ck0 = bz * B; if (bx * B + B - 1 > ci1) ci1 = bx * B + B - 1; if (by * B + B - 1 > cj1) cj1 = by * B + B - 1; if (bz * B + B - 1 > ck1) ck1 = bz * B + B - 1;
+      continue;
+    }
+    let own = false; const fill = br === INSIDE ? -band : band, src = br && br !== INSIDE ? br : null;
+    const xa = Math.max(i0, bx * B), xb = Math.min(i0 + nx, bx * B + B), ya = Math.max(j0, by * B), yb = Math.min(j0 + ny, by * B + B), za = Math.max(k0, bz * B), zb = Math.min(k0 + nz, bz * B + B);
+    for (let z = za; z < zb; z++) for (let y = ya; y < yb; y++) {
+      let s = (xa - bx * B) + B * ((y - by * B) + B * (z - bz * B)); const Y = y * h, Z = z * h;
+      for (let x = xa; x < xb; x++, s++) {
+        const old = src ? src.d[s] : fill, sd = dist(x * h, Y, Z); let nv = old, paint = 0;
+        if (mode === 'paint') { if (sd < 0 && old < band) paint = Math.min(1, a * Math.min(1, -sd / h2)); else continue; }
+        else if (mode === 'add') { if (sd >= old + k || sd > band + k) continue; nv = smin(old, sd, k); if (color && nv < h2 && nv > -h2) paint = sd <= old ? 1 : 1 - (sd - old) / (k + 1e-9); }
+        else if (mode === 'subtract') { if (sd > band + k || old >= band || -sd <= old - k) continue; nv = smax(old, -sd, k); }
+        else if (mode === 'intersect') nv = smax(old, sd, k);
+        if (nv > band) nv = band; else if (nv < -band) nv = -band;
+        if (nv === old && !paint) continue;
+        if (!own) {   /* first real change in this brick: keep the old one for undo, then work on our own copy */
+          if (snap && !snap.has(key)) snap.set(key, !br || br === INSIDE ? br : { d: br.d.slice(), c: br.c.slice() });
+          if (!src) { br = f.newBrick(fill); f.bricks.set(key, br); } own = true;
+        }
+        const tgt = src || br; tgt.d[s] = nv;
+        if (paint) { const o3 = s * 3; tgt.c[o3] = tgt.c[o3] + (color[0] - tgt.c[o3]) * paint + 0.5; tgt.c[o3 + 1] = tgt.c[o3 + 1] + (color[1] - tgt.c[o3 + 1]) * paint + 0.5; tgt.c[o3 + 2] = tgt.c[o3 + 2] + (color[2] - tgt.c[o3 + 2]) * paint + 0.5; }
+      }
+    }
+    if (!own) continue; changed = true; const tgt = f.bricks.get(key);
+    let allOut = true, allIn = true; for (let s = 0; s < B3; s++) { const v = tgt.d[s]; if (v < band) allOut = false; if (v > -band) allIn = false; if (!allOut && !allIn) break; }
+    if (allOut) f.bricks.delete(key); else if (allIn) f.bricks.set(key, INSIDE);
+    if (bx * B < ci0) ci0 = bx * B; if (by * B < cj0) cj0 = by * B; if (bz * B < ck0) ck0 = bz * B; if (bx * B + B - 1 > ci1) ci1 = bx * B + B - 1; if (by * B + B - 1 > cj1) cj1 = by * B + B - 1; if (bz * B + B - 1 > ck1) ck1 = bz * B + B - 1;
+  }
+  void base; if (!changed) return null; f.version++; return [ci0, cj0, ck0, ci1, cj1, ck1];
+}
+export function opShapeDense(f, lo, hi, dist, mode, k, color, snap, amount) {   /* the read-change-write version, kept to check the in-place one against */
   const pad = Math.ceil((f.band + k) / f.h) + 1, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, pad); if (nx * ny * nz > MAX_SAMPLES) return null;
   const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, c = r.c, h = f.h, h2 = f.h * 2, band = f.band, a = amount == null ? 1 : amount; let changed = false;
   for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
@@ -230,3 +275,38 @@ export function sdCapsule(x, y, z, a, b, r, n, flat) {
   if (flat && n) { const k = dx * n[0] + dy * n[1] + dz * n[2], s = 1 / (1 - flat * 0.75); dx += n[0] * k * (s - 1); dy += n[1] * k * (s - 1); dz += n[2] * k * (s - 1); return (len3(dx, dy, dz) - r) / s; }   /* stretched along n by s, so the ribbon is r * (1 - 0.75 flat) thick; dividing by s keeps it a safe distance */
   return len3(dx, dy, dz) - r;
 }
+
+/* signed distances near a closed triangle soup (Make clay, a stamp pressed into clay): the distance to the nearest triangle, the sign from a ray count along x (odd = inside). Bounded: refuses more than 4 M samples. */
+export function voxelizeTris(tris, h, band, base) {
+    const f = { base }, lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9]; tris.forEach(t => { for (let k = 0; k < 9; k++) { const a = k % 3; if (t[k] < lo[a]) lo[a] = t[k]; if (t[k] > hi[a]) hi[a] = t[k]; } });
+    const i0 = Math.floor(lo[0] / h) - 5, j0 = Math.floor(lo[1] / h) - 5, k0 = Math.floor(lo[2] / h) - 5, nx = Math.ceil(hi[0] / h) + 5 - i0 + 1, ny = Math.ceil(hi[1] / h) + 5 - j0 + 1, nz = Math.ceil(hi[2] / h) + 5 - k0 + 1;
+    if (nx * ny * nz > 4e6) return null;
+    const d = new Float32Array(nx * ny * nz).fill(band), c = new Uint8Array(nx * ny * nz * 3); for (let i = 0; i < nx * ny * nz; i++) { c[i * 3] = f.base[0]; c[i * 3 + 1] = f.base[1]; c[i * 3 + 2] = f.base[2]; }
+    /* unsigned distance in the band: each triangle writes to the samples round it */
+    const cp = new Float64Array(3);
+    for (const t of tris) {
+      const a0 = Math.floor((Math.min(t[0], t[3], t[6]) - band) / h) - i0, a1 = Math.ceil((Math.max(t[0], t[3], t[6]) + band) / h) - i0, b0 = Math.floor((Math.min(t[1], t[4], t[7]) - band) / h) - j0, b1 = Math.ceil((Math.max(t[1], t[4], t[7]) + band) / h) - j0, c0 = Math.floor((Math.min(t[2], t[5], t[8]) - band) / h) - k0, c1 = Math.ceil((Math.max(t[2], t[5], t[8]) + band) / h) - k0;
+      for (let z = Math.max(0, c0); z <= Math.min(nz - 1, c1); z++) for (let y = Math.max(0, b0); y <= Math.min(ny - 1, b1); y++) for (let x = Math.max(0, a0); x <= Math.min(nx - 1, a1); x++) {
+        const px = (i0 + x) * h, py = (j0 + y) * h, pz = (k0 + z) * h; closestOnTri(px, py, pz, t, cp); const dd = Math.hypot(px - cp[0], py - cp[1], pz - cp[2]), o = x + nx * (y + ny * z); if (dd < d[o]) d[o] = dd;
+      }
+    }
+    /* the sign: a ray along +x from each row; crossings toggle inside */
+    const rows = new Map(); tris.forEach((t, ti) => { const y0 = Math.floor(Math.min(t[1], t[4], t[7]) / h) - j0, y1 = Math.ceil(Math.max(t[1], t[4], t[7]) / h) - j0, z0 = Math.floor(Math.min(t[2], t[5], t[8]) / h) - k0, z1 = Math.ceil(Math.max(t[2], t[5], t[8]) / h) - k0; for (let z = Math.max(0, z0); z <= Math.min(nz - 1, z1); z++) for (let y = Math.max(0, y0); y <= Math.min(ny - 1, y1); y++) { const k = y + ny * z; let l = rows.get(k); if (!l) { l = []; rows.set(k, l); } l.push(ti); } });
+    rows.forEach((list, k) => {
+      const y = k % ny, z = (k - y) / ny, py = (j0 + y) * h + h * 1e-3, pz = (k0 + z) * h + h * 7e-4, xs = [];
+      for (const ti of list) { const t = tris[ti], ay = t[1], az = t[2], by = t[4], bz = t[5], cy = t[7], cz = t[8], dd = (by - ay) * (cz - az) - (cy - ay) * (bz - az); if (Math.abs(dd) < 1e-18) continue; const w1 = ((py - ay) * (cz - az) - (cy - ay) * (pz - az)) / dd, w2 = ((by - ay) * (pz - az) - (py - ay) * (bz - az)) / dd; if (w1 < 0 || w2 < 0 || w1 + w2 > 1) continue; xs.push(t[0] + w1 * (t[3] - t[0]) + w2 * (t[6] - t[0])); }
+      if (xs.length < 2) return; xs.sort((p, q) => p - q);
+      for (let x = 0; x < nx; x++) { const px = (i0 + x) * h; let n = 0; for (const xx of xs) { if (xx < px) n++; else break; } if (n % 2 === 1) { const o = x + nx * (y + ny * z); d[o] = -d[o]; } }
+    });
+    return { d, c, i0, j0, k0, nx, ny, nz };
+  }
+function closestOnTri(px, py, pz, t, out) {   /* the closest point of triangle t (9 numbers) to p (Ericson, Real-Time Collision Detection 5.1.5) */
+    const ax = t[0], ay = t[1], az = t[2], abx = t[3] - ax, aby = t[4] - ay, abz = t[5] - az, acx = t[6] - ax, acy = t[7] - ay, acz = t[8] - az, apx = px - ax, apy = py - ay, apz = pz - az;
+    const d1 = abx * apx + aby * apy + abz * apz, d2 = acx * apx + acy * apy + acz * apz; if (d1 <= 0 && d2 <= 0) { out[0] = ax; out[1] = ay; out[2] = az; return; }
+    const bpx = px - t[3], bpy = py - t[4], bpz = pz - t[5], d3 = abx * bpx + aby * bpy + abz * bpz, d4 = acx * bpx + acy * bpy + acz * bpz; if (d3 >= 0 && d4 <= d3) { out[0] = t[3]; out[1] = t[4]; out[2] = t[5]; return; }
+    const vc = d1 * d4 - d3 * d2; if (vc <= 0 && d1 >= 0 && d3 <= 0) { const v = d1 / (d1 - d3); out[0] = ax + abx * v; out[1] = ay + aby * v; out[2] = az + abz * v; return; }
+    const cpx = px - t[6], cpy = py - t[7], cpz = pz - t[8], d5 = abx * cpx + aby * cpy + abz * cpz, d6 = acx * cpx + acy * cpy + acz * cpz; if (d6 >= 0 && d5 <= d6) { out[0] = t[6]; out[1] = t[7]; out[2] = t[8]; return; }
+    const vb = d5 * d2 - d1 * d6; if (vb <= 0 && d2 >= 0 && d6 <= 0) { const w = d2 / (d2 - d6); out[0] = ax + acx * w; out[1] = ay + acy * w; out[2] = az + acz * w; return; }
+    const va = d3 * d6 - d5 * d4; if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) { const w = (d4 - d3) / ((d4 - d3) + (d5 - d6)); out[0] = t[3] + (t[6] - t[3]) * w; out[1] = t[4] + (t[7] - t[4]) * w; out[2] = t[5] + (t[8] - t[5]) * w; return; }
+    const den = 1 / (va + vb + vc), v = vb * den, w = vc * den; out[0] = ax + abx * v + acx * w; out[1] = ay + aby * v + acy * w; out[2] = az + abz * v + acz * w;
+  }

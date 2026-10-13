@@ -124,6 +124,7 @@ export function createVrSculpt(THREE, core, host) {
     const r = cfg.size / 100;
     if (!rt.st) {
       let L = rt.layer;
+      if (!L && clay.active && clay.live(clay.active) && clay.active.group.visible) L = clay.active;   /* a stroke that starts in the air works on the picked layer (a subtract or intersect stroke drawn in from outside) */
       if (!L) { if (cfg.op === 'subtract' || cfg.op === 'paint' || cfg.op === 'intersect') { once(cfg.op === 'paint' ? 'Paint needs clay or a figure under the brush.' : 'There is no clay here to ' + cfg.op + ': switch the mode to add to build some.'); return; } L = clay.ensureLayer(hand.tip, figure); if (!L) return; }
       if (L.locked) { once(L.name + ' is locked: unlock it on the Layers page.'); return; }
       strokeStart(); rt.st = clay.strokeBegin(L, { mode: cfg.mode, op: cfg.op }); rt.last = hand.tip.clone(); rt.prevTip = hand.tip.clone(); rt.t = 1; rt.travel = 0;
@@ -131,8 +132,10 @@ export function createVrSculpt(THREE, core, host) {
       return;
     }
     rt.t += dt; const moved = hand.tip.distanceTo(rt.last), spacing = cfg.mode === 'dots' ? r * 1.4 : Math.max(clay.S.active ? clay.S.active.field.h * 0.8 : 0.004, r * 0.25);
-    if (HOLD_BRUSHES.has(cfg.mode)) { if (hand.tip.distanceTo(rt.prevTip) > 1e-4) { clay.strokeStep(rt.st, hand.tip, rt.prevTip, clayOpts(hand, rt.prevTip)); rt.prevTip = hand.tip.clone(); } return; }
-    if (moved >= spacing || (cfg.mode !== 'dots' && cfg.mode !== 'clay' && rt.t > 0.1)) { clay.strokeStep(rt.st, hand.tip, cfg.mode === 'clay' ? rt.last : hand.tip, clayOpts(hand, rt.last)); rt.last = hand.tip.clone(); rt.t = 0; }
+    if (rt.cool > 0) { rt.cool--; return; }   /* the last dab was costly (a big brush on fine clay): skip a frame or two. Nothing is lost: the next dab joins the last point to this one. */
+    const cost = () => { const ms = clay.S.lastDabMs; rt.cool = ms > 6 ? Math.min(3, Math.floor(ms / 6)) : 0; };
+    if (HOLD_BRUSHES.has(cfg.mode)) { if (hand.tip.distanceTo(rt.prevTip) > 1e-4) { clay.strokeStep(rt.st, hand.tip, rt.prevTip, clayOpts(hand, rt.prevTip)); rt.prevTip = hand.tip.clone(); cost(); } return; }
+    if (moved >= spacing || (cfg.mode !== 'dots' && cfg.mode !== 'clay' && rt.t > 0.05)) { clay.strokeStep(rt.st, hand.tip, cfg.mode === 'clay' ? rt.last : hand.tip, clayOpts(hand, rt.last)); rt.last = hand.tip.clone(); rt.t = 0; cost(); }
   }
   function clayEnd(rt) { if (rt.st) clay.strokeEnd(rt.st, ({ clay: 'clay', dots: 'dots' })[cfg.mode] || cfg.mode); rt.st = null; }
 
@@ -243,7 +246,7 @@ export function createVrSculpt(THREE, core, host) {
     for (const hand of sh) {
       let rt = route.get(hand.id);
       if (hand.pinch && !rt) {
-        const ch = clay.works.length ? clay.hit(hand.tip, Math.max(0.03, cfg.size / 100 * 1.5), true) : null;
+        const reach = Math.max(0.03, cfg.size / 100 * 1.5), ch = clay.works.length ? (clay.hit(hand.tip, reach, true) || clay.nearBox(hand.tip, reach)) : null;   /* a sweep may start in the air beside the clay */
         if (ch && cfg.mode !== 'squeeze') { const mh = fig.hitAt(hand.tip, cfg.size); rt = (!mh || ch.d <= mh.dWorld) ? { to: 'clay', layer: ch.layer } : { to: 'current' }; } else rt = { to: 'current' };
         if (rt.to === 'clay' && (cfg.mode === 'heal' || cfg.mode === 'close' || cfg.mode === 'wrinkle')) { once('Clay has no open edges: it is always closed. Use Smooth or Pinch on clay.'); rt = { to: 'none' }; }
         if (rt.to === 'clay' && cfg.mode === 'stamp') { stampAt(hand); rt = { to: 'none' }; }
@@ -294,7 +297,7 @@ export function createVrSculpt(THREE, core, host) {
     targetNames: () => targets().map(m => m.name), hasEntry: m => fig.hasEntry(m) || !!(current && current.hasEntry && current.hasEntry(m)), squeezed, get colors() { return current ? current.colors : [0xe8c9a0]; },
     /* new in the next engine */
     engine: ENGINE, version: ENGINE_VERSION, clay, shapes, hold, exportGlb, flush: () => clay.flush(), stats: () => Object.assign(clay.stats(), { undo: undoS.length, redo: redoS.length, targets: targetsCache.length }),
-    makeClay: mesh => { const L = clay.fromMesh(mesh); if (L) dirty(L.work.group); return L; }, decimate: (g, n) => exporter.decimate(g, n),
+    makeClay: mesh => clay.fromMesh(mesh),   /* a layer, or a Promise of one when the worker voxelizes */ decimate: (g, n) => exporter.decimate(g, n),
     icons: ICONS, lessons: LESSONS, tiles: TILES, colors3: CLAY_COLORS, pickedObject: () => { const s = stampSources(); return s ? s.roots[0] : null; },
   };
   vs.menu = makeMenu(vs, { say });

@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script><script type="module">
+const T = await import('/pe_lib/bst_three_0.186.1.module.js'); const { createVrSculpt } = await import('/pe_lib/sculpt_next_engine.js'); const V3 = T.Vector3, scene = new T.Scene(), out = {};
+const vs = createVrSculpt(T, null, { setBench() {}, say: t => (out.say = (out.say || []).concat(t)), figure: () => null, props: () => [], addObject: o => scene.add(o), removeObject: o => o.parent && o.parent.remove(o), noWorker: true });
+vs.enter(null); vs.set.stabilize(0); const C = new V3(0, 1.2, -0.5), L = vs.clay.ensureLayer(C, null); vs.clay.applyShapeWorld(L, 'sphere', new T.Matrix4().compose(C, new T.Quaternion(), new V3(0.06, 0.06, 0.06)), 'add', 0, [214, 196, 170], 'off', 6, 'ball');
+const vol = () => { let n = 0; L.field.bricks.forEach(v => { if (v.inside) n += 512; else for (let i = 0; i < 512; i++) if (v.d[i] < 0) n++; }); return n; };
+const sig = () => { let s = 0; L.field.bricks.forEach((v, k) => { if (v.inside) s += k % 1000; else for (let i = 0; i < 512; i += 7) s += v.d[i] * (i + 1); }); return s; };
+const V0 = vol(), S0 = sig(), top = C.clone().add(new V3(0, 0.06, 0)); vs.set.size(3); vs.set.strength(50); vs.set.mode('inflate');
+for (let i = 0; i < 15; i++) vs.frame([{ id: 'r', tip: top.clone(), pinch: true }], 0.016); vs.frame([{ id: 'r', tip: top.clone(), pinch: false }], 0.016);
+out.after = vol() - V0; vs.undo(); vs.set.op('subtract'); const n0=vs.strokes(); for (let i = 0; i < 15; i++) vs.frame([{ id: 'r', tip: top.clone(), pinch: true }], 0.016); vs.frame([{ id: 'r', tip: top.clone(), pinch: false }], 0.016); out.subAfter = vol() - V0; out.subEntries = vs.strokes() - n0; out.op = vs.cfg.op; out.mode = vs.cfg.mode; out.dabs = vs.clay.stats().dabs; out.n = vs.strokes(); out.undo = vs.undo(); out.afterUndo = vol() - V0; out.sigDiff = sig() - S0; out.n2 = vs.strokes();
+window.__result = out; </script>

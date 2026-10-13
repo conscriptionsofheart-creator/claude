@@ -2,7 +2,7 @@
    triangles (sculpt_next_mesher.js), meshed in a Web Worker so a stroke never holds up a frame. Layers can be hidden, locked, grouped, duplicated, merged down (add, subtract, intersect) and remeshed;
    every change is one undo step. Strokes take mirror and radial symmetry from the work's own frame: the mirror is the work's middle plane, radial goes round its upright.
    makeClay(THREE, env): env = { say, addObject, removeObject, pushUndo({label, undo, redo}), dirty(obj), workerUrl (optional), noWorker (tests) }. */
-import { createField, opShape, opOffset, opSmooth, opPlane, opWarp, opIntersectField, opMergeField, surfacePlane, sdCapsule, sdPrim, falloff, bunkey, B } from './sculpt_next_sdf.js';
+import { createField, voxelizeTris, INSIDE, bkey, opShape, opOffset, opSmooth, opPlane, opWarp, opIntersectField, opMergeField, surfacePlane, sdCapsule, sdPrim, falloff, bunkey, B } from './sculpt_next_sdf.js';
 import { meshChunk } from './sculpt_next_mesher.js';
 
 const N = 16;   /* cells per chunk side: 8 cm of clay at the normal 5 mm detail */
@@ -12,7 +12,7 @@ export const CLAY_COLORS = [[214, 196, 170], [196, 120, 96], [143, 184, 217], [1
 export function makeClay(THREE, env) {
   env = env || {};
   const V3 = THREE.Vector3, M4 = THREE.Matrix4, Q = THREE.Quaternion, say = t => { try { env.say && env.say(t); } catch (e) { /* the host's voice is optional */ } };
-  const works = [], S = { active: null, layerN: 0, workN: 0, groupN: 0, worker: null, workerOk: false, inflight: 0, jobId: 0, meshMs: 0, meshCount: 0, lastDabMs: 0, dabs: 0, dabMs: 0 };
+  const works = [], S = { jobs: new Map(), active: null, layerN: 0, workN: 0, groupN: 0, worker: null, workerOk: false, inflight: 0, jobId: 0, meshMs: 0, meshCount: 0, lastDabMs: 0, dabs: 0, dabMs: 0 };
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   /* ---------- the worker (off the page's thread); if it cannot start, meshing runs on the page within a time budget per frame ---------- */
@@ -21,13 +21,17 @@ export function makeClay(THREE, env) {
     try {
       const url = env.workerUrl || new URL('./sculpt_next_worker.js', import.meta.url);
       const w = new Worker(url, { type: 'module' });
-      w.onmessage = e => { S.inflight = Math.max(0, S.inflight - 1); S.workerOk = true; for (const r of e.data.out) applyMesh(r.layer, r.key, r.ver, r); };
-      w.onerror = e => { say('Clay meshing moved to the main thread (' + String(e && e.message || 'worker failed').slice(0, 50) + ').'); try { w.terminate(); } catch (x) { /* already gone */ } S.worker = null; S.inflight = 0; allLayers().forEach(l => l.chunkVer.forEach((_, k) => l.dirty.add(k))); };
+      w.onmessage = e => { const m = e.data; S.workerOk = true;
+        if (m.type === 'mesh' || !m.type) { S.inflight = Math.max(0, S.inflight - 1); if (m.out) for (const r of m.out) applyMesh(r.layer, r.key, r.ver, r); return; }
+        const p = S.jobs.get(m.id); if (!p) return; S.jobs.delete(m.id); if (m.error) p.no(new Error(m.error)); else p.ok(m.r); };
+      w.onerror = e => { say('Clay meshing moved to the main thread (' + String(e && e.message || 'worker failed').slice(0, 50) + ').'); try { w.terminate(); } catch (x) { /* already gone */ } S.worker = null; S.inflight = 0; S.jobs.forEach(p => p.no(new Error('worker stopped'))); S.jobs.clear(); allLayers().forEach(l => l.chunkVer.forEach((_, k) => l.dirty.add(k))); };
       S.worker = w;
     } catch (e) { S.worker = null; }
   }
   startWorker();
   const layerById = new Map();
+  /* a one-off heavy job (voxelize, decimate) in the worker: a Promise, or null when there is no worker (the caller then does it here) */
+  function work(type, payload, move) { if (!S.worker) return null; const id = ++S.jobId; return new Promise((ok, no) => { S.jobs.set(id, { ok, no }); S.worker.postMessage(Object.assign({ type, id }, payload), move || []); }); }
 
   /* ---------- works and layers ---------- */
   function newWork(at, quat) {
@@ -86,21 +90,22 @@ export function makeClay(THREE, env) {
   }
   /* every frame: send dirty chunks to the worker, or mesh them here until the time budget is spent. The picked layer goes first. */
   function tick(budgetMs) {
+    if (remeshJobs.length) remeshTick(Math.max(2, (budgetMs || 4) * 0.75), false);
     const order = allLayers().filter(l => l.dirty.size).sort((a, b) => (a === S.active ? -1 : b === S.active ? 1 : 0)); if (!order.length) return 0;
     let done = 0; const t0 = now();
     if (S.worker && S.inflight < 3) {
       const jobs = []; for (const L of order) { for (const k of L.dirty) { jobs.push(job(L, k)); L.dirty.delete(k); if (jobs.length >= 24) break; } if (jobs.length >= 24) break; }
-      if (jobs.length) { S.inflight++; const move = []; jobs.forEach(j => move.push(j.d.buffer, j.c.buffer)); S.worker.postMessage({ id: ++S.jobId, jobs }, move); done = jobs.length; }
+      if (jobs.length) { S.inflight++; const move = []; jobs.forEach(j => move.push(j.d.buffer, j.c.buffer)); S.worker.postMessage({ type: 'mesh', id: ++S.jobId, jobs }, move); done = jobs.length; }
       return done;
     }
     if (S.worker) return 0;
     for (const L of order) { for (const k of [...L.dirty]) { const j = job(L, k); L.dirty.delete(k); const m = meshChunk(j.d, j.c, j.n, j.i0, j.j0, j.k0, j.h); applyMesh(L.id, k, j.ver, m); done++; if (now() - t0 > (budgetMs || 4)) break; } if (now() - t0 > (budgetMs || 4)) break; }
     S.meshMs += now() - t0; S.meshCount += done; return done;
   }
-  function flush() {   /* mesh everything that waits, right now, here (tests, a save, an export) */
-    const t0 = now(); let n = 0; allLayers().forEach(L => { for (const k of [...L.dirty]) { const j = job(L, k); L.dirty.delete(k); applyMesh(L.id, k, j.ver, meshChunk(j.d, j.c, j.n, j.i0, j.j0, j.k0, j.h)); n++; } }); S.meshMs += now() - t0; S.meshCount += n; return n;
+  function flush() {   /* finish every remesh and mesh everything that waits, right now, here (tests, a save, an export) */
+    remeshTick(0, true); const t0 = now(); let n = 0; allLayers().forEach(L => { for (const k of [...L.dirty]) { const j = job(L, k); L.dirty.delete(k); applyMesh(L.id, k, j.ver, meshChunk(j.d, j.c, j.n, j.i0, j.j0, j.k0, j.h)); n++; } }); S.meshMs += now() - t0; S.meshCount += n; return n;
   }
-  const pending = () => allLayers().reduce((a, l) => a + l.dirty.size, 0) + S.inflight;
+  const pending = () => allLayers().reduce((a, l) => a + l.dirty.size, 0) + S.inflight + remeshJobs.length;
 
   /* ---------- where the clay is: the nearest visible, unlocked layer surface to a world point (distance in metres, null when farther than the reach) ---------- */
   const scaleOf = obj => { obj.updateMatrixWorld(true); const s = new V3(); obj.matrixWorld.decompose(new V3(), new Q(), s); return Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)) || 1; };
@@ -110,6 +115,16 @@ export function makeClay(THREE, env) {
       if (!live(L) || !L.group.visible || (onlyUnlocked && L.locked)) continue; const sc = scaleOf(L.group), p = L.group.worldToLocal(pw.clone()), d = L.field.sample(p.x, p.y, p.z) * sc;
       if (d >= L.field.band * sc * 0.999) continue;   /* farther than the stored band: no surface close enough to say */
       if (d <= reach && (!best || d < best.d)) best = { layer: L, d, local: p, scale: sc };
+    }
+    return best;
+  }
+  /* the nearest layer by its BOX (a saw or carve sweep often starts in the air beside the clay, farther than the stored band): { layer, d } within reach, or null */
+  function nearBox(pw, reach) {
+    let best = null;
+    for (const L of allLayers()) {
+      if (!live(L) || !L.group.visible || L.locked) continue; const bb = L.field.bounds(); if (!bb) continue; const h = L.field.h;
+      const box = new THREE.Box3(new V3(bb[0] * h, bb[1] * h, bb[2] * h), new V3(bb[3] * h, bb[4] * h, bb[5] * h)).applyMatrix4(L.group.matrixWorld), d = box.distanceToPoint(pw);
+      if (d <= reach && (!best || d < best.d)) best = { layer: L, d };
     }
     return best;
   }
@@ -151,7 +166,7 @@ export function makeClay(THREE, env) {
         if (st.temp) box = opShape(st.temp, lo, hi, dist, 'add', k, opts.color, null);
         else box = opShape(fld, lo, hi, dist, op === 'subtract' ? 'subtract' : op === 'paint' ? 'paint' : 'add', k, opts.color, snap, opts.strength);
       }
-      else if (mode === 'inflate' || mode === 'deflate') { const sg = (mode === 'deflate' ? -1 : 1) * (op === 'subtract' ? -1 : 1); box = opOffset(fld, Bp, r, sg * Math.min(h * 0.8, opts.strength * r * 0.06), fall, snap); }
+      else if (mode === 'inflate' || mode === 'deflate') { const sg = (mode === 'deflate' ? -1 : 1) * (op === 'subtract' ? -1 : 1); box = opOffset(fld, Bp, r, sg * Math.min(h * 0.8, opts.strength * r * 0.12), fall, snap); }   /* at most 0.8 voxel a dab, so the stored band always holds the new surface */
       else if (mode === 'smooth') box = opSmooth(fld, Bp, r, opts.strength * 0.9, fall, snap);
       else if (mode === 'flatten' || mode === 'scrape' || mode === 'fill') {
         const pl = surfacePlane(fld, Bp, r); if (!pl) continue;
@@ -169,7 +184,7 @@ export function makeClay(THREE, env) {
         box = opWarp(fld, [C[0] - r, C[1] - r, C[2] - r], [C[0] + r, C[1] + r, C[2] + r], Dl, (x, y, z) => { const w = fall(Math.hypot(x - C[0] - D[0], y - C[1] - D[1], z - C[2] - D[2]) / r); return w > 0 ? [D[0] * w, D[1] * w, D[2] * w] : null; }, snap);
       }
       else if (mode === 'dots') {   /* a stamp every so often along the stroke, pointing out of the surface (or along the hand) */
-        const pl = surfacePlane(fld, Bp, r * 1.5), up = pl ? new V3(...pl.n) : new V3(0, 1, 0), q = new Q().setFromUnitVectors(new V3(0, 1, 0), up.normalize()), M = new M4().compose(new V3(...Bp), q, new V3(r * 0.5, r * 0.5, r * 0.5)), Mi = new M4().copy(M).invert(), kind = ({ ball: 'sphere', ring: 'torus', cube: 'cube', spike: 'cone' })[opts.dot] || 'sphere', e = Mi.elements, sc2 = r * 0.5;
+        const pl = surfacePlane(fld, Bp, r * 1.5), up = pl ? new V3(...pl.n) : new V3(0, 1, 0), q = new Q().setFromUnitVectors(new V3(0, 1, 0), up.normalize()), sv = fld.sample(Bp[0], Bp[1], Bp[2]), onS = pl && Math.abs(sv) < fld.band * 0.99 ? new V3(Bp[0] - up.x * sv, Bp[1] - up.y * sv, Bp[2] - up.z * sv) : new V3(...Bp), M = new M4().compose(onS, q, new V3(r * 0.5, r * 0.5, r * 0.5)),   /* the stamp sits ON the surface under the fingertip */ Mi = new M4().copy(M).invert(), kind = ({ ball: 'sphere', ring: 'torus', cube: 'cube', spike: 'cone' })[opts.dot] || 'sphere', e = Mi.elements, sc2 = r * 0.5;
         const dist = (x, y, z) => { const X = e[0] * x + e[4] * y + e[8] * z + e[12], Y = e[1] * x + e[5] * y + e[9] * z + e[13], Z = e[2] * x + e[6] * y + e[10] * z + e[14]; return sdPrim(kind, X, Y, Z, 0.15) * sc2; };
         const lo2 = [Bp[0] - r, Bp[1] - r, Bp[2] - r], hi2 = [Bp[0] + r, Bp[1] + r, Bp[2] + r];
         box = st.temp ? opShape(st.temp, lo2, hi2, dist, 'add', 0, opts.color, null) : opShape(fld, lo2, hi2, dist, op === 'subtract' ? 'subtract' : op === 'paint' ? 'paint' : 'add', h * 0.5, opts.color, snap, opts.strength);
@@ -263,13 +278,36 @@ export function makeClay(THREE, env) {
     env.pushUndo && env.pushUndo({ label: 'merge group', undo: () => { state = base.field.restore(state); markBricks(base, [...state.keys()]); rest.forEach((x, k) => { w.group.add(x.group); w.layers.splice(idx[k], 0, x); }); }, redo: () => { state = base.field.restore(state); markBricks(base, [...state.keys()]); apply(); } });
     say('The group is one layer now: ' + base.name + '.'); return true;
   }
-  /* Remesh: the picked layer sampled again at a new detail (h metres): finer for small work, coarser for speed. One undo step. */
+  /* Remesh: the picked layer sampled again at a new detail (h metres): finer for small work, coarser for speed. One undo step.
+     Each new brick is filled straight from the old field (trilinear), bricks wholly in air or wholly inside are settled from one sample at their middle, and only a few ms of bricks are done per frame
+     (from tick()), so even a big layer never freezes the headset; the old layer stays in view until the new one is ready. */
+  const remeshJobs = [];
   function remesh(h) {
-    const L = S.active; if (!L) return false; const old = L.field, bb = old.bounds(); if (!bb) return false; const nf = createField({ h, color: old.base }), oh = old.h;
-    const t0 = now(); opMergeField(nf, old, (x, y, z) => [x, y, z], 'add', 0, null, [bb[0] * oh, bb[1] * oh, bb[2] * oh], [bb[3] * oh, bb[4] * oh, bb[5] * oh]); const ms = now() - t0;
-    const swap = f => { L.chunks.forEach(m => { L.group.remove(m); m.geometry.dispose(); }); L.chunks.clear(); L.chunkVer.clear(); L.dirty.clear(); L.field = f; markAll(L); };
-    swap(nf); env.pushUndo && env.pushUndo({ label: 'remesh', undo: () => swap(old), redo: () => swap(nf) });
-    say(L.name + ' remeshed at ' + Math.round(h * 1000) + ' mm detail (' + Math.round(ms) + ' ms).'); return ms;
+    const L = S.active; if (!L) return false; if (remeshJobs.some(j => j.L === L)) { say(L.name + ' is already being remeshed.'); return false; }
+    const old = L.field, bb = old.bounds(); if (!bb) return false; const oh = old.h, nf = createField({ h, color: old.base }), list = [];
+    for (let bz = Math.floor(bb[2] * oh / h / B) - 1; bz <= Math.floor(bb[5] * oh / h / B) + 1; bz++) for (let by = Math.floor(bb[1] * oh / h / B) - 1; by <= Math.floor(bb[4] * oh / h / B) + 1; by++) for (let bx = Math.floor(bb[0] * oh / h / B) - 1; bx <= Math.floor(bb[3] * oh / h / B) + 1; bx++) list.push([bx, by, bz]);
+    remeshJobs.push({ L, old, nf, list, i: 0, ms: 0, ver: old.version }); say('Remeshing ' + L.name + ' at ' + Math.round(h * 1000) + ' mm detail…'); return true;
+  }
+  function remeshBrick(old, nf, bx, by, bz) {
+    const h = nf.h, band = nf.band, half = 3.5 * h * Math.sqrt(3), mid = old.sample((bx * B + 3.5) * h, (by * B + 3.5) * h, (bz * B + 3.5) * h);
+    if (mid - half >= Math.min(band, old.band * 0.999)) return;   /* all air */
+    if (mid + half <= -Math.min(band, old.band * 0.999)) { nf.bricks.set(bkey(bx, by, bz), INSIDE); return; }   /* all inside */
+    const br = nf.newBrick(band); let any = false, allIn = true;
+    for (let z = 0; z < B; z++) for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) { const s = x + B * (y + B * z), X = (bx * B + x) * h, Y = (by * B + y) * h, Z = (bz * B + z) * h, v = Math.max(-band, Math.min(band, old.sample(X, Y, Z))); br.d[s] = v; if (v < band) any = true; if (v > -band) allIn = false; if (Math.abs(v) < h * 2) { const c = old.colorAt(X, Y, Z); br.c[s * 3] = c[0]; br.c[s * 3 + 1] = c[1]; br.c[s * 3 + 2] = c[2]; } }
+    if (allIn) nf.bricks.set(bkey(bx, by, bz), INSIDE); else if (any) nf.bricks.set(bkey(bx, by, bz), br);
+  }
+  function remeshTick(budgetMs, all) {
+    const t0 = now();
+    while (remeshJobs.length && (all || now() - t0 < budgetMs)) {
+      const j = remeshJobs[0];
+      if (j.L.field !== j.old || j.old.version !== j.ver) { remeshJobs.shift(); say(j.L.name + ' changed while it was being remeshed; remesh again when you are ready.'); continue; }
+      const t1 = now(); while (j.i < j.list.length && (all || now() - t0 < budgetMs)) { const [bx, by, bz] = j.list[j.i++]; remeshBrick(j.old, j.nf, bx, by, bz); } j.ms += now() - t1;
+      if (j.i < j.list.length) continue;
+      remeshJobs.shift(); const L = j.L, old = j.old, nf = j.nf;
+      const swap = f => { L.chunks.forEach(m => { L.group.remove(m); m.geometry.dispose(); }); L.chunks.clear(); L.chunkVer.clear(); L.dirty.clear(); L.field = f; markAll(L); };
+      swap(nf); env.pushUndo && env.pushUndo({ label: 'remesh', undo: () => swap(old), redo: () => swap(nf) }); S.lastRemeshMs = j.ms;
+      say(L.name + ' remeshed at ' + Math.round(nf.h * 1000) + ' mm detail.');
+    }
   }
   /* Make clay: a closed mesh (a prop, a shape, a baked layer) becomes a clay layer, so every clay tool and boolean works on it. The mesh is hidden, not deleted (undo shows it again). */
   function fromMesh(mesh, h) {
@@ -278,47 +316,20 @@ export function makeClay(THREE, env) {
     const at = new THREE.Box3().setFromObject(mesh).getCenter(new V3()), w = works.find(x => x.group.parent) || newWork(at, null), L = newLayer(w, { h, name: (mesh.name || 'object').replace(/^cloth_/, '') + ' clay' });
     const toL = new M4().copy(L.group.matrixWorld).invert().multiply(mesh.matrixWorld), tri = [], v = new V3();
     for (let t = 0; t < nT; t++) { const q = []; for (let k = 0; k < 3; k++) { v.fromBufferAttribute(P, I ? I[t * 3 + k] : t * 3 + k).applyMatrix4(toL); q.push(v.x, v.y, v.z); } tri.push(q); }
-    const t0 = now(), r = voxelize(L.field, tri); void sc;
-    if (!r) { removeLayerQuiet(L); say('That object is too big to turn into clay at this detail.'); return null; }
-    markAll(L); const vis = mesh.visible; mesh.visible = false; S.active = L;
-    env.pushUndo && env.pushUndo({ label: 'make clay', undo: () => { mesh.visible = vis; w.group.remove(L.group); const j = w.layers.indexOf(L); if (j >= 0) w.layers.splice(j, 1); }, redo: () => { mesh.visible = false; w.group.add(L.group); w.layers.push(L); S.active = L; } });
-    say('"' + (mesh.name || 'The object') + '" is clay now (' + Math.round(now() - t0) + ' ms). The original is hidden; undo brings it back.'); return L;
+    const t0 = now(); void sc;
+    const finish = r => {
+      if (!r) { removeLayerQuiet(L); say('That object is too big to turn into clay at this detail.'); return null; }
+      L.field.write(r, null); markAll(L); const vis = mesh.visible; mesh.visible = false; S.active = L;
+      env.pushUndo && env.pushUndo({ label: 'make clay', undo: () => { mesh.visible = vis; w.group.remove(L.group); const j = w.layers.indexOf(L); if (j >= 0) w.layers.splice(j, 1); }, redo: () => { mesh.visible = false; w.group.add(L.group); w.layers.push(L); S.active = L; } });
+      env.dirty && env.dirty(w.group); say('"' + (mesh.name || 'The object') + '" is clay now (' + Math.round(now() - t0) + ' ms). The original is hidden; undo brings it back.'); return L;
+    };
+    const job = env.syncMake ? null : work('voxel', { tris: tri, h: L.field.h, band: L.field.band, base: L.field.base });
+    if (job) { say('Turning "' + (mesh.name || 'the object') + '" into clay…'); return job.then(finish, () => finish(voxelizeTris(tri, L.field.h, L.field.band, L.field.base))); }
+    return finish(voxelizeTris(tri, L.field.h, L.field.band, L.field.base));
   }
   function removeLayerQuiet(L) { const w = L.work; w.group.remove(L.group); const j = w.layers.indexOf(L); if (j >= 0) w.layers.splice(j, 1); }
-  /* signed distances near a closed triangle soup: the distance to the nearest triangle, the sign from a ray count along x (odd = inside). Bounded: refuses more than 4 M samples. */
-  function voxelize(f, tris) {
-    const h = f.h, band = f.band, lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9]; tris.forEach(t => { for (let k = 0; k < 9; k++) { const a = k % 3; if (t[k] < lo[a]) lo[a] = t[k]; if (t[k] > hi[a]) hi[a] = t[k]; } });
-    const i0 = Math.floor(lo[0] / h) - 5, j0 = Math.floor(lo[1] / h) - 5, k0 = Math.floor(lo[2] / h) - 5, nx = Math.ceil(hi[0] / h) + 5 - i0 + 1, ny = Math.ceil(hi[1] / h) + 5 - j0 + 1, nz = Math.ceil(hi[2] / h) + 5 - k0 + 1;
-    if (nx * ny * nz > 4e6) return null;
-    const d = new Float32Array(nx * ny * nz).fill(band), c = new Uint8Array(nx * ny * nz * 3); for (let i = 0; i < nx * ny * nz; i++) { c[i * 3] = f.base[0]; c[i * 3 + 1] = f.base[1]; c[i * 3 + 2] = f.base[2]; }
-    /* unsigned distance in the band: each triangle writes to the samples round it */
-    const cp = new Float64Array(3);
-    for (const t of tris) {
-      const a0 = Math.floor((Math.min(t[0], t[3], t[6]) - band) / h) - i0, a1 = Math.ceil((Math.max(t[0], t[3], t[6]) + band) / h) - i0, b0 = Math.floor((Math.min(t[1], t[4], t[7]) - band) / h) - j0, b1 = Math.ceil((Math.max(t[1], t[4], t[7]) + band) / h) - j0, c0 = Math.floor((Math.min(t[2], t[5], t[8]) - band) / h) - k0, c1 = Math.ceil((Math.max(t[2], t[5], t[8]) + band) / h) - k0;
-      for (let z = Math.max(0, c0); z <= Math.min(nz - 1, c1); z++) for (let y = Math.max(0, b0); y <= Math.min(ny - 1, b1); y++) for (let x = Math.max(0, a0); x <= Math.min(nx - 1, a1); x++) {
-        const px = (i0 + x) * h, py = (j0 + y) * h, pz = (k0 + z) * h; closestOnTri(px, py, pz, t, cp); const dd = Math.hypot(px - cp[0], py - cp[1], pz - cp[2]), o = x + nx * (y + ny * z); if (dd < d[o]) d[o] = dd;
-      }
-    }
-    /* the sign: a ray along +x from each row; crossings toggle inside */
-    const rows = new Map(); tris.forEach((t, ti) => { const y0 = Math.floor(Math.min(t[1], t[4], t[7]) / h) - j0, y1 = Math.ceil(Math.max(t[1], t[4], t[7]) / h) - j0, z0 = Math.floor(Math.min(t[2], t[5], t[8]) / h) - k0, z1 = Math.ceil(Math.max(t[2], t[5], t[8]) / h) - k0; for (let z = Math.max(0, z0); z <= Math.min(nz - 1, z1); z++) for (let y = Math.max(0, y0); y <= Math.min(ny - 1, y1); y++) { const k = y + ny * z; let l = rows.get(k); if (!l) { l = []; rows.set(k, l); } l.push(ti); } });
-    rows.forEach((list, k) => {
-      const y = k % ny, z = (k - y) / ny, py = (j0 + y) * h + h * 1e-3, pz = (k0 + z) * h + h * 7e-4, xs = [];
-      for (const ti of list) { const t = tris[ti], ay = t[1], az = t[2], by = t[4], bz = t[5], cy = t[7], cz = t[8], dd = (by - ay) * (cz - az) - (cy - ay) * (bz - az); if (Math.abs(dd) < 1e-18) continue; const w1 = ((py - ay) * (cz - az) - (cy - ay) * (pz - az)) / dd, w2 = ((by - ay) * (pz - az) - (py - ay) * (bz - az)) / dd; if (w1 < 0 || w2 < 0 || w1 + w2 > 1) continue; xs.push(t[0] + w1 * (t[3] - t[0]) + w2 * (t[6] - t[0])); }
-      if (xs.length < 2) return; xs.sort((p, q) => p - q);
-      for (let x = 0; x < nx; x++) { const px = (i0 + x) * h; let n = 0; for (const xx of xs) { if (xx < px) n++; else break; } if (n % 2 === 1) { const o = x + nx * (y + ny * z); d[o] = -d[o]; } }
-    });
-    f.write({ d, c, i0, j0, k0, nx, ny, nz }, null); return true;
-  }
-  function closestOnTri(px, py, pz, t, out) {   /* the closest point of triangle t (9 numbers) to p (Ericson, Real-Time Collision Detection 5.1.5) */
-    const ax = t[0], ay = t[1], az = t[2], abx = t[3] - ax, aby = t[4] - ay, abz = t[5] - az, acx = t[6] - ax, acy = t[7] - ay, acz = t[8] - az, apx = px - ax, apy = py - ay, apz = pz - az;
-    const d1 = abx * apx + aby * apy + abz * apz, d2 = acx * apx + acy * apy + acz * apz; if (d1 <= 0 && d2 <= 0) { out[0] = ax; out[1] = ay; out[2] = az; return; }
-    const bpx = px - t[3], bpy = py - t[4], bpz = pz - t[5], d3 = abx * bpx + aby * bpy + abz * bpz, d4 = acx * bpx + acy * bpy + acz * bpz; if (d3 >= 0 && d4 <= d3) { out[0] = t[3]; out[1] = t[4]; out[2] = t[5]; return; }
-    const vc = d1 * d4 - d3 * d2; if (vc <= 0 && d1 >= 0 && d3 <= 0) { const v = d1 / (d1 - d3); out[0] = ax + abx * v; out[1] = ay + aby * v; out[2] = az + abz * v; return; }
-    const cpx = px - t[6], cpy = py - t[7], cpz = pz - t[8], d5 = abx * cpx + aby * cpy + abz * cpz, d6 = acx * cpx + acy * cpy + acz * cpz; if (d6 >= 0 && d5 <= d6) { out[0] = t[6]; out[1] = t[7]; out[2] = t[8]; return; }
-    const vb = d5 * d2 - d1 * d6; if (vb <= 0 && d2 >= 0 && d6 <= 0) { const w = d2 / (d2 - d6); out[0] = ax + acx * w; out[1] = ay + acy * w; out[2] = az + acz * w; return; }
-    const va = d3 * d6 - d5 * d4; if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) { const w = (d4 - d3) / ((d4 - d3) + (d5 - d6)); out[0] = t[3] + (t[6] - t[3]) * w; out[1] = t[4] + (t[7] - t[4]) * w; out[2] = t[5] + (t[8] - t[5]) * w; return; }
-    const den = 1 / (va + vb + vc), v = vb * den, w = vc * den; out[0] = ax + abx * v + acx * w; out[1] = ay + aby * v + acy * w; out[2] = az + abz * v + acz * w;
-  }
+  /* a closed triangle soup -> signed distances in f (sculpt_next_sdf.js voxelizeTris does the maths, here or in the worker) */
+  function voxelize(f, tris) { const r = voxelizeTris(tris, f.h, f.band, f.base); if (!r) return null; f.write(r, null); return true; }
   /* the triangles of a layer as ONE mesh (welded where chunks meet), in the layer's space: for export, Bake to mesh, Decimate and stamping a figure with clay */
   function bakeGeometry(L) {
     flushLayer(L); const pos = [], nrm = [], col = [], idx = [], ids = new Map(), q = 1e6;
@@ -338,8 +349,8 @@ export function makeClay(THREE, env) {
   function stats() { let tris = 0, chunks = 0, bytes = 0, bricks = 0; allLayers().forEach(L => { if (!live(L)) return; L.chunks.forEach(m => { tris += m.geometry.index.count / 3; chunks++; }); bytes += L.field.bytes(); bricks += L.field.bricks.size; }); return { works: works.filter(w => w.group.parent).length, layers: allLayers().filter(live).length, tris, chunks, bricks, kB: Math.round(bytes / 1024), pending: pending(), worker: !!S.worker, workerOk: S.workerOk, dabs: S.dabs, dabMsAvg: S.dabs ? S.dabMs / S.dabs : 0, meshMsPerChunk: S.meshCount ? S.meshMs / S.meshCount : 0 }; }
   function resetStats() { S.dabs = 0; S.dabMs = 0; S.meshMs = 0; S.meshCount = 0; }
   return {
-    S, works, allLayers, live, newWork, newLayer, ensureLayer, hit, strokeBegin, strokeStep, strokeEnd, applyShapeWorld, copiesWorld, copiesMatrix, tick, flush, pending,
-    voxelizeField: voxelize, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf,
+    S, works, allLayers, live, newWork, newLayer, ensureLayer, hit, nearBox, strokeBegin, strokeStep, strokeEnd, applyShapeWorld, copiesWorld, copiesMatrix, tick, flush, pending,
+    voxelizeField: voxelize, work, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf,
     get active() { return S.active; }, set active(L) { S.active = L; },
   };
 }
