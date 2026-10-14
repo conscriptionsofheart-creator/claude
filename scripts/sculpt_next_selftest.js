@@ -383,6 +383,35 @@ export async function runNextTests(T, ctx) {
     A.vs.together.stop(); await settle(); people.forEach(p => { cleanup(p.vs); scene.remove(p.world); });
   });
 
+  /* ---------- Substance 3D Modeler's controller layout (Ruth 2026-10-14, with Adobe's controller map) ---------- */
+  await section('controls', async () => {
+    const vs = fresh(), sleep = ms => new Promise(r => setTimeout(r, ms)), none = { top: false, bottom: false, click: false, x: 0, y: 0 }, S = (role, o) => vs.controls(role, Object.assign({}, none, o), 0.016);
+    const tapB = (role, k, o) => { S(role, Object.assign({ [k]: true }, o || {})); return S(role, o || {}); }, flick = (role, x, y) => { S(role, { x, y }); S(role, {}); };
+    res.ct_default = vs.cfg.controls;
+    vs.set.mode('clay'); vs.set.size(2); vs.set.tint(1); run(vs, line(new V3(-0.1, 1.2, -0.5), new V3(0.05, 1.2, -0.5), 16)); const L = vs.clay.active, v1 = vol(L);
+    flick('support', -0.9, 0); res.ct_undo = b(vol(L) === 0); flick('support', 0.9, 0); res.ct_redo = b(Math.abs(vol(L) - v1) < 1e-12);
+    const s0 = vs.cfg.size; for (let i = 0; i < 40; i++) S('tool', { y: -0.9 }); S('tool', {}); const s1 = vs.cfg.size; for (let i = 0; i < 40; i++) S('tool', { y: 0.9 }); S('tool', {}); res.ct_sizeUpDown = b(s1 > s0 * 1.3 && vs.cfg.size < s1 * 0.8); res.ct_sizes = [s0, r2(s1), r2(vs.cfg.size)].join(' -> ');
+    vs.set.falloff('smooth'); flick('tool', 0.9, 0); const f1 = vs.cfg.falloff; flick('tool', 0.9, 0); res.ct_hardness = b(f1 === 'linear' && vs.cfg.falloff === 'sharp'); flick('tool', -0.9, 0);
+    tapB('tool', 'bottom'); const op1 = vs.cfg.op; tapB('tool', 'bottom'); res.ct_partner = b(op1 === 'subtract' && vs.cfg.op === 'add');
+    tapB('support', 'top'); const m1 = vs.cfg.mode; tapB('support', 'top'); res.ct_gizmoFree = b(m1 === 'prim' && vs.cfg.mode === 'clay');
+    const pShow = S('support', { bottom: true }); await sleep(450); const pHide = S('support', {}); res.ct_paletteHold = b(pShow.palette === 'show' && pHide.palette === 'hide');
+    S('support', { bottom: true }); const pin = S('support', {}); const tap2a = S('support', { bottom: true }), tap2b = S('support', {}); res.ct_paletteTapPins = b(!pin.palette && tap2b.palette === 'hide' && !tap2a.palette);
+    S('support', { bottom: true }); await sleep(40); const pg = (() => { S('tool', { x: 0.9 }); const r = S('tool', { x: 0.9 }); S('tool', {}); return r; })(); const pgFirst = (() => { S('tool', {}); const r = S('tool', { x: 0.9 }); S('tool', {}); return r; })(); await sleep(400); S('support', {}); res.ct_palettePages = b(pgFirst.page === 'step:1' || pg.page === 'step:1');
+    res.ct_freeze = b(tapB('tool', 'click') && S('tool', { click: true }).freeze === false || (() => { S('tool', {}); return S('tool', { click: true }).freeze; })());
+    /* colour pick: the support stick click arms it; the next pinch on the clay takes its colour and does not sculpt */
+    vs.set.rgb('#000000'); const n0 = vs.strokes(); tapB('support', 'click'); const onClay = new V3(-0.02, 1.2 + 0.0185, -0.5); vs.frame([hand('r', onClay, true)], 0.016); vs.frame([hand('r', onClay, true)], 0.016); vs.frame([hand('r', onClay, false)], 0.016); vs.flush();
+    const want = '#' + L.field.colorAt(...L.group.worldToLocal(onClay.clone()).toArray()).map(v => Math.round(v).toString(16).padStart(2, '0')).join(''); res.ct_pickColour = b(vs.cfg.rgb === want && vs.strokes() === n0); res.ct_picked = vs.cfg.rgb + ' / ' + want;
+    /* T1: a tap selects the layer under the tool hand; hold and move up = more strength */
+    const L2 = vs.clay.addLayer(); vs.clay.pickLayer(L2); S('tool', { top: true, tip: onClay }); S('tool', { tip: onClay }); res.ct_selectLayer = b(vs.clay.active === L);
+    vs.set.strength(30); S('tool', { top: true, tip: onClay }); for (let i = 1; i <= 10; i++) S('tool', { top: true, tip: onClay.clone().add(new V3(0, i * 0.006, 0)) }); S('tool', { tip: onClay }); res.ct_quicktune = b(vs.cfg.strength > 45); res.ct_strength = vs.cfg.strength;
+    /* support stick up / down: scope into the layer under the hand, out to the whole work */
+    S('support', { y: -0.9, tip: onClay }); S('support', {}); const inW = vs.cfg.holdWhat; S('support', { y: 0.9 }); S('support', {}); res.ct_scope = b(inW === 'layer' && vs.cfg.holdWhat === 'work');
+    /* tooltips: a thumb resting on a button for half a second says what it does */
+    const nSay = sayLog.length; S('tool', { touchTop: true }); await sleep(560); S('tool', { touchTop: true }); res.ct_tooltip = b(sayLog.slice(nSay).some(t => /Tool hand, top button/.test(t)));
+    vs.set.controls('atelier'); res.ct_atelierOff = b(vs.controls('tool', Object.assign({}, none, { bottom: true }), 0.016) === null); vs.set.controls('substance');
+    res.ct_mapLines = vs.controlMap.length; cleanup(vs);
+  });
+
   /* ---------- the menu pages, icons and lessons ---------- */
   await section('menu', async () => {
     const vs = fresh(), host = ['inflateIc', 'smoothIc', 'grabIc', 'brushSize', 'strengthBars', 'symOff', 'symMirror', 'symRound', 'undoStroke', 'redoStroke', 'undo', 'floppy', 'eye', 'lock', 'cutIc', 'carveIc'], has = ic => ic in vs.icons || host.includes(ic);

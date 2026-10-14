@@ -25,6 +25,7 @@ import { buildEmblemGen } from './sculpt_next_emblem.js';
 import { GRADIENT_NAMES, gradientOf, alphaAt, colourAt as gradColour, SKIN_NAMES, placeOf, LOOK_NAMES, makeMaterial } from './sculpt_next_looks.js';
 import { makeWheel } from './sculpt_next_wheel.js';
 import { makeAvatar, rigAvatar } from './sculpt_next_avatar.js';
+import { makeControls, CONTROL_MAP } from './sculpt_next_controls.js';
 import { rodGeometry, colourAt } from './sculpt_next_rod.js';
 import { createField, opShape, opIntersectField } from './sculpt_next_sdf.js';
 import { makeCollab, connectWs, matInfo, matFrom, encodeGeometry, decodeGeometry, encodeObject, decodeObject, encodeField, decodeFieldInto, makeHash } from './sculpt_next_collab.js';   /* the synchronous forms, for one-off pinches (stamp) */
@@ -62,6 +63,7 @@ export function createVrSculpt(THREE, core, host) {
     pulseDur: 0.6, pulseRepeat: 1,   /* expressions: how long one pulse takes (s), how many times it plays */
     rgb: '', alpha: 1,    /* the colour picked on the colour wheel (empty: the old palette's, by tint) and how solid it is (0 = clear) */
     gradient: 'from Colour', gradCustom: '',   /* rods, balls and the Gradient tool: a named gradient (sculpt_next_looks.js) or your own, built on the wheel ('#rrggbb[aa]@t,...') */
+    controls: 'substance',   /* the controllers inside Sculpt: Substance 3D Modeler's layout (sculpt_next_controls.js) or the Atelier's own */
     avatarLook: 'pearl', avatarGradient: 'own', avatarUrl: '',   /* sculpting together: how YOU look to the others (a look, a gradient or your own colour, and a MakeHuman or other rigged .glb when the page can load one) */
     skin: 'smooth',       /* how the Gradient tool lays the gradient: along your line, or as marble, wood, scales, speckle, stripes, spots, camo, clouds */
     rodTwist: 180, rodEnd: 'taper',   /* Rod: how far it twists from one end to the other (degrees); its far end tapered to a point or blunt */
@@ -256,7 +258,8 @@ export function createVrSculpt(THREE, core, host) {
   function frame(hands, dt) {
     if (!cfg.on) return; dt = dt || 0.016; cursor.hands = {}; tick++; if (!collab.on) motion.tick(dt);   /* expressions play while you sculpt (together, the room's clock turns them) */
     let sh = steady(hands || []); if (sh[0]) { lastTip.copy(sh[0].tip); if (sh[0].dir) lastDir.copy(sh[0].dir); }
-    if (wheel.isOpen) sh = wheel.frame(sh);   /* a pinch that starts on the colour wheel works the wheel, not the clay */
+    if (wheel.isOpen) sh = wheel.frame(sh);
+    if (ctl.picking || picked.size) sh = sh.map(h => { if (h.pinch && !picked.has(h.id) && ctl.pickColour(h.tip)) picked.add(h.id); if (picked.has(h.id)) { if (!h.pinch) picked.delete(h.id); return Object.assign({}, h, { pinch: false }); } return h; });   /* colour pick (support stick click): that pinch takes a colour and does not sculpt   /* a pinch that starts on the colour wheel works the wheel, not the clay */
     if (collab.on) { collab.localFrame(sh, dt); clay.tick(Math.min(10, 4 + clay.backlog() * 0.25)); collabCursors(sh); updateAvatars(dt); return; }   /* together: this frame's hands go to everyone (you too) in one order, and are worked when they come back */
     fig.frameStart(); if (tick % 45 === 0 && !fig.strokes.size && !route.size) targets();   /* pick up objects pulled into the room while the bench is on */
     clay.tick(4);   /* clay chunks that changed: to the worker (or meshed here within 4 ms) */
@@ -451,6 +454,15 @@ export function createVrSculpt(THREE, core, host) {
     const put = which => ch.forEach(x => { x.m.material = which ? x.newMat : x.oldMat; }); put(true); list.forEach(m => touchedSince.add(m));
     pushUndo({ label: 'look', undo: () => put(false), redo: () => put(true), touch: ['O:' + (root.name || root.id)] }); dirty(root); say((root.name || 'It') + ': ' + c.finish + (a < 0.999 ? ', ' + Math.round((1 - a) * 100) + '% see-through' : '') + '.');
   }
+  /* the colour under a point (the colour pick): clay's own colour, a mesh's vertex colour (or its material's), 0..255 screen colour */
+  const toScreen = v => (LINEAR ? (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055) : v);
+  function colourUnder(at) {
+    const ch = clay.hit(at, 0.04, false); if (ch) { const p = ch.layer.group.worldToLocal(at.clone()); return ch.layer.field.colorAt(p.x, p.y, p.z); }
+    targets(); const mh = fig.hitAt(at, Math.max(2, cfg.size)); if (!mh) return null; const m = mh.mesh, C = m.geometry.attributes.color, mat = [].concat(m.material)[0], base = mat && mat.color ? [mat.color.r, mat.color.g, mat.color.b] : [1, 1, 1];
+    const c = C ? [C.getX(mh.i), C.getY(mh.i), C.getZ(mh.i)].map((v, k) => v * (mat && mat.vertexColors ? base[k] : 1)) : base; return c.map(v => toScreen(Math.max(0, Math.min(1, v))) * 255);
+  }
+  const picked = new Set();
+  const ctl = makeControls({ cfg, set: new Proxy({}, { get: (t, k) => (...a) => vs.set[k](...a) }), undo: (...a) => vs.undo(...a), redo: (...a) => vs.redo(...a), get clay() { return vs.clay; }, assets: () => vs.assets() }, { say: t => say(t), THREE, colourAt: colourUnder });
   /* the colour wheel (sculpt_next_wheel.js): local to this headset; what it picks are settings, which travel to a collaborator like any other */
   let lastDir = new V3(0, 0, -1);
   const wheel = makeWheel(THREE, { cfg, palette: () => CLAY_COLORS, gradientStops: () => paintStops(cfg).front, say: t => say(t), addHelper: o => { try { host.addObject ? host.addObject(o) : null; } catch (e) { /* host */ } }, removeHelper: o => { try { if (o.parent) o.parent.remove(o); } catch (e) { /* gone */ } } });
@@ -466,7 +478,7 @@ export function createVrSculpt(THREE, core, host) {
     op: v => { cfg.op = ['add', 'subtract', 'paint', 'intersect'].includes(v) ? v : 'add'; }, falloff: v => { cfg.falloff = ['smooth', 'linear', 'sharp', 'flat'].includes(v) ? v : 'smooth'; },
     stabilize: v => { cfg.stabilize = clampN(+v || 0, 0, 1); }, blend: v => { cfg.blend = clampN(+v || 0, 0, 1); }, clayProfile: v => { cfg.clayProfile = v === 'flat' ? 'flat' : 'round'; }, dot: v => { cfg.dot = ['ball', 'ring', 'cube', 'spike'].includes(v) ? v : 'ball'; },
     prim: v => { cfg.prim = ['sphere', 'cube', 'cylinder', 'cone', 'torus', 'capsule'].includes(v) ? v : 'sphere'; }, detail: v => { cfg.detail = clampN(+v || 5, 2, 20); }, tint: v => { cfg.tint = ((v | 0) % CLAY_COLORS.length + CLAY_COLORS.length) % CLAY_COLORS.length; },
-    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, rodTwist: v => { cfg.rodTwist = clampN(+v || 0, -720, 720); }, rodEnd: v => { cfg.rodEnd = v === 'blunt' ? 'blunt' : 'taper'; }, rgb: v => { cfg.rgb = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : ''; }, alpha: v => { cfg.alpha = clampN(+v, 0, 1); }, gradient: v => { cfg.gradient = GRADIENT_NAMES.includes(v) ? v : 'from Colour'; }, gradCustom: v => { cfg.gradCustom = String(v || '').slice(0, 400); }, skin: v => { cfg.skin = SKIN_NAMES.includes(v) ? v : 'smooth'; }, avatarLook: v => { cfg.avatarLook = LOOK_NAMES.includes(v) ? v : 'pearl'; }, avatarGradient: v => { cfg.avatarGradient = v === 'own' || GRADIENT_NAMES.includes(v) ? v : 'own'; }, avatarUrl: v => { cfg.avatarUrl = String(v || '').slice(0, 300); }, supportSmooth: v => { cfg.supportSmooth = !!v; }, haptics: v => { cfg.haptics = !!v; },
+    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, rodTwist: v => { cfg.rodTwist = clampN(+v || 0, -720, 720); }, rodEnd: v => { cfg.rodEnd = v === 'blunt' ? 'blunt' : 'taper'; }, rgb: v => { cfg.rgb = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : ''; }, alpha: v => { cfg.alpha = clampN(+v, 0, 1); }, gradient: v => { cfg.gradient = GRADIENT_NAMES.includes(v) ? v : 'from Colour'; }, gradCustom: v => { cfg.gradCustom = String(v || '').slice(0, 400); }, skin: v => { cfg.skin = SKIN_NAMES.includes(v) ? v : 'smooth'; }, avatarLook: v => { cfg.avatarLook = LOOK_NAMES.includes(v) ? v : 'pearl'; }, avatarGradient: v => { cfg.avatarGradient = v === 'own' || GRADIENT_NAMES.includes(v) ? v : 'own'; }, avatarUrl: v => { cfg.avatarUrl = String(v || '').slice(0, 300); }, controls: v => { cfg.controls = v === 'atelier' ? 'atelier' : 'substance'; }, supportSmooth: v => { cfg.supportSmooth = !!v; }, haptics: v => { cfg.haptics = !!v; },
     finish: v => { cfg.finish = LOOK_NAMES.includes(v) ? v : 'satin'; }, pulseDur: v => { cfg.pulseDur = clampN(+v || 0.6, 0.2, 4); }, pulseRepeat: v => { cfg.pulseRepeat = clampN(v | 0, 1, 10); }, clayOnFigure: v => { cfg.clayOnFigure = v === 'clay' ? 'clay' : 'skin'; }, budget: v => { cfg.budget = Math.max(0, v | 0); },
   };
   const after = {
@@ -680,7 +692,7 @@ export function createVrSculpt(THREE, core, host) {
     idle: dt => { if (cfg.on) return; if (collab.on) { clay.tick(4); collab.localFrame([], dt); updateAvatars(dt || 0.016); } else motion.tick(dt || 0.016); },   /* the page calls this every frame while Sculpt is closed, so a work keeps spinning (and, together, the shared work keeps up) */
     assets: () => assets.filter(a => a.object.parent), makeEmblem: o => { if (collab.on && !curCtx) { o = o || {}; collab.act('emblem', [{ height: o.height, spin: o.spin, turn: o.turn, at: emblemAt(o).toArray() }]); return true; } return makeEmblem(o); },
     spin: (obj, T) => { obj = obj || (clay.active && clay.active.work.group); if (!obj) return false; if (collab.on && !curCtx) { const r = refOf(obj); if (!r) return false; collab.act('spin', [r, T || 0]); return true; } return spinNow(obj, T); },
-    joinPieces: pub('join', joinPieces), openWheel, closeWheel: () => wheel.close(), wheel, gradients: GRADIENT_NAMES, skins: SKIN_NAMES, looks: LOOK_NAMES, paintStops: () => paintStops(cfg), playMotionLocal: playNow, newAsset: pub('newAsset', newAsset), endAsset: pub('endAsset', endAsset), get assetBench() { return !!asset; },
+    joinPieces: pub('join', joinPieces), controls: (role, st, dt) => ctl.input(role, st, dt), controlMap: CONTROL_MAP, selected: () => ctl.selected, openWheel, closeWheel: () => wheel.close(), wheel, gradients: GRADIENT_NAMES, skins: SKIN_NAMES, looks: LOOK_NAMES, paintStops: () => paintStops(cfg), playMotionLocal: playNow, newAsset: pub('newAsset', newAsset), endAsset: pub('endAsset', endAsset), get assetBench() { return !!asset; },
     icons: ICONS, lessons: LESSONS, tiles: TILES, colors3: CLAY_COLORS, pickedObject: () => { const s = stampSources(); return s ? s.roots[0] : null; },
   };
   vs.menu = makeMenu(vs, { say });

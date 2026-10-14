@@ -74,9 +74,31 @@ The same busy-room run on the **current** engine: 560 ms at 1× (about 9× more)
 2. Each headset finds it at `ws://<the page's host>:8787/?room=atelier` by default; set another address with `localStorage.sculptTogetherUrl` or the page's `host.collabUrl()`. A page served over **https** needs **wss://** (put the relay behind the same TLS proxy as the page).
 3. In the headset: Clay & shapes ▸ **Sculpt together**. With clay of your own in the room the first tap only warns (joining someone shows their work instead); tap again. **My avatar** and **My avatar colours** set how you look to the others.
 
-## Substance's controls: what was checked
+## Substance's controls (from Ruth's report, `research/Adobe_Substance_3D_Real_Screenshots_and_Controls.html`, built from Adobe's own controller map)
 
-Adobe's help pages could not be opened from the build machine (the network refused helpx.adobe.com), so only what search summaries said was used: a **tool hand** and a **support hand**; the palette on the support hand; the tool-hand thumbstick resizes while holding; the support-hand stick changes a count during an action; tooltips on touch. The rest of Substance's button table is **unverified**. The headset build keeps the app's own rules: A/B/X/Y and stick clicks freeze everything (comfort rule), so the partner swap is the tracked hand's palm-up gesture, not a button.
+Inside Sculpt, with **Controls: Substance** (the default; the tile switches to **Atelier** for the page's old layout), the controllers work as in Substance 3D Modeler. Adobe names hands by role: the **tool hand** sculpts, the **support hand** helps (`sculpt_next_controls.js`; `vr_core.js` passes both hands' buttons and sticks to it):
+
+| Control | Substance 3D Modeler | Here |
+|---|---|---|
+| Tool trigger | use the tool | the same |
+| Support lower button (S2) | hold: the Palette | hold: the Palette (CLAY pages) while held; a quick tap pins it or puts it away |
+| Support upper button (S1) | placement: Free / Gizmo | Gizmo (a shape with knobs) / Free (your brush) |
+| Support stick left / right | undo / redo | the same (your own steps when sculpting together) |
+| Support stick up / down | scope in / out | in: the layer under your tool hand (or the next); out: the whole work |
+| Support stick click | colour pick | the same: the next trigger pull takes the colour your tool hand touches |
+| Support trigger | modifier (alternate smooth...) | while the tool hand sculpts, smooths |
+| Tool stick up / down | brush size | the same |
+| Tool stick left / right | hardness | edge: soft, even, sharp, flat |
+| Tool lower button (T2) | quick-swap partner tool | add <-> take away (Clay <-> Erase) |
+| Tool upper button (T1) | Quicktune / select | tap: select (a clay layer, a rod, ball or emblem); hold and move your hand: strength (up/down) and size (sideways) |
+| Palette open + tool stick left / right | expand Palette / Actions | turns the Palette's pages |
+| Either grip / both grips | move / scale the world | the page's own world grab, unchanged (the same as Modeler) |
+| Touching a button | tooltip | rest your thumb on it for half a second: its job is said |
+| Tool stick click | (not used by Modeler) | **freeze / resume everything** (Ruth's comfort rule stays one click away) |
+
+Outside Sculpt nothing changes. Adobe's pages say the brush size moved between sticks across versions (the report notes it); this follows the current controller map (tool stick). With tracked hands (no controllers) the gestures stay: pinch, the other hand's pinch smooths, palm up for the partner tool. **Controller map** (a tile) says the whole layout aloud.
+
+Still to match from the report's tool list (next): Split and Crop, Flip selection, Raise, Buildup, Elastic, a Select tool with the gizmo, stretching the brush unevenly (T1 held while moving), and Free / Gizmo / Surface placement for every brush (here Gizmo means the Shapes tool).
 
 ## Files
 
@@ -100,6 +122,7 @@ New (all in `scripts/`, flat, go to `lib/`):
 | `sculpt_next_wheel.js` | the colour wheel (vertex colours only, no canvas) |
 | `sculpt_next_looks.js` | gradients (library and your own), skins (patterns), looks (materials) |
 | `sculpt_next_collab.js` | sculpting together: the shared order, joining, checksums, WebSocket and in-page transports, snapshot encoders |
+| `sculpt_next_controls.js` | Substance 3D Modeler's controller layout inside Sculpt (tool hand / support hand), tooltips on touch, colour pick, Quicktune |
 | `sculpt_next_avatar.js` | the people you sculpt with: built-in figure and rigged figures (MakeHuman, Mixamo, Blender names) posed to head and hands |
 | `sculpt_next_ui.js` | wrist-menu pages, picture-tile icons, lessons, tile list |
 | `sculpt_next_testkit.js` | a built skinned figure, and a stand-in with MakeHuman's bone names, for the self-test |
@@ -112,7 +135,7 @@ Changed:
 |---|---|
 | `sculpt_next_engine.js` | was the slot re-exporting the current engine; now the next engine |
 | `bst_vr_sculpt_selftest.html` | `?engine=current\|next`; falls back to the built figure; runs the next engine's checks; `?only=` sections |
-| `vr_core.js` | +16 lines, all guarded: the engine's icons merged into ICONS (existing names untouched), its pages 10–13 (CLAY, SHAPES, LAYERS, EXPRESSIONS) and the "Clay & shapes ▸" entry tile, a palm-up flag on tracked hands, a soft haptic tick, an idle call so a spin (and a shared session) keeps going after Sculpt closes, and two host functions: `head()` (the XR camera's pose, for your avatar on the others' headsets) and `loadAvatar(url)` (a .glb through the page's GLTFLoader). The current engine uses none of these, so with it nothing changes. |
+| `vr_core.js` | +22 lines, all guarded: the engine's icons merged into ICONS (existing names untouched), its pages 10–13 (CLAY, SHAPES, LAYERS, EXPRESSIONS) and the "Clay & shapes ▸" entry tile, a palm-up flag on tracked hands, a soft haptic tick, an idle call so a spin (and a shared session) keeps going after Sculpt closes, and two host functions: `head()` (the XR camera's pose, for your avatar on the others' headsets) and `loadAvatar(url)` (a .glb through the page's GLTFLoader); inside Sculpt with Substance controls, both hands' buttons and sticks go to the engine (the tool hand's stick click still freezes everything, the grips still move the world). The current engine uses none of these, so with it nothing changes. |
 | `sculpt_next_README.md` | the contract's new optional parts |
 
 Untouched and reused as they are: `bst_vr_sculpt.js`, `bst_sculpt_core.js`, `bst_cut.js`, `bst_shapekeys.js`, `bst_squeeze.js`, `bst_wrinkle.js`, `wardrobe_core.js` (its cut saving sees each brushed piece of clothing as changed, because the piece gets a buffer-sharing new geometry object after the stroke).
@@ -121,7 +144,7 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 
 ## Tests (no headset)
 
-`bst_vr_sculpt_selftest.html?three=128|186&engine=next` (append `&only=clay,brushes,shapes,cutter,layers,hold,figure,export,worker,timing,flow,emblem,rod,looks,together,avatars,menu` for parts). Every existing check of the current engine passes on the next engine (r128 and r186), then about 300 more (340 values in all on each revision): clay watertight with exact undo / redo, mirror / 360 / both, each brush's effect with exact undo (12/12), shapes and gizmo, booleans, saw (one undo per sweep), plane cut, carve, erase, stamp into clay, clay as a stamp into an object, mixed undo with the current engine's saw, every layer operation, Hold, the stabiliser, the support-hand smooth, the palm-up swap, haptic ticks, the asset bench, expression pulses, a recorded expression saved and reloaded from the .glb, the emblem (parts, colours, depth, spin, Spin clip in the .glb, brushable, undo, built in slices), the rod (follows the path, undo / redo), **the colour wheel** (hue, strength, light, see-through, building a gradient with + and −, sculpting beside it, closing), see-through rods, the Gradient tool along a line and its undo, a marble skin, a gradient on clay, looks on rods and clay (chrome, glass with see-through, pearl), people left alone, a dressed rod saved with its metal, **sculpting together** (alone, a late join with the same work, both on the same clay at once, a shape from one person's menu, undo refused and then allowed, the emblem and its spin the same on both, a figure key, the emblem built **by hand** by two people at once and joined, spun and saved, dressing it together, four people, someone leaving, a drifted headset repaired), **avatars** (two people sculpting, each seen by the other in their own look and gradient; one as a rigged MakeHuman-named figure with head and wrist exactly on the person's, one built-in; a look change seen live; leaving removes it), the menu (every icon resolves, every SVG parses, every lesson one step). **Figures:** after every brush, the saw and a shape cut, the skin indices, skin weights, rest shape, an existing key ("Smile"), the bones, bone inverses and bind matrix are byte-identical; the .glb reloads with 11/11 bones, its weights and all keys.
+`bst_vr_sculpt_selftest.html?three=128|186&engine=next` (append `&only=clay,brushes,shapes,cutter,layers,hold,figure,export,worker,timing,flow,emblem,rod,looks,together,avatars,controls,menu` for parts). Every existing check of the current engine passes on the next engine (r128 and r186), then about 300 more (361 values in all on each revision): clay watertight with exact undo / redo, mirror / 360 / both, each brush's effect with exact undo (12/12), shapes and gizmo, booleans, saw (one undo per sweep), plane cut, carve, erase, stamp into clay, clay as a stamp into an object, mixed undo with the current engine's saw, every layer operation, Hold, the stabiliser, the support-hand smooth, the palm-up swap, haptic ticks, the asset bench, expression pulses, a recorded expression saved and reloaded from the .glb, the emblem (parts, colours, depth, spin, Spin clip in the .glb, brushable, undo, built in slices), the rod (follows the path, undo / redo), **the colour wheel** (hue, strength, light, see-through, building a gradient with + and −, sculpting beside it, closing), see-through rods, the Gradient tool along a line and its undo, a marble skin, a gradient on clay, looks on rods and clay (chrome, glass with see-through, pearl), people left alone, a dressed rod saved with its metal, **sculpting together** (alone, a late join with the same work, both on the same clay at once, a shape from one person's menu, undo refused and then allowed, the emblem and its spin the same on both, a figure key, the emblem built **by hand** by two people at once and joined, spun and saved, dressing it together, four people, someone leaving, a drifted headset repaired), **avatars** (two people sculpting, each seen by the other in their own look and gradient; one as a rigged MakeHuman-named figure with head and wrist exactly on the person's, one built-in; a look change seen live; leaving removes it), **Substance controls** (undo and redo on the support stick, size and edge on the tool stick, the partner swap, Gizmo / Free, the Palette held and pinned, its pages, freeze, colour pick taking the clay's exact colour without sculpting, select, Quicktune, scope in and out, tooltips, the Atelier layout switching it all off), the menu (every icon resolves, every SVG parses, every lesson one step). **Figures:** after every brush, the saw and a shape cut, the skin indices, skin weights, rest shape, an existing key ("Smile"), the bones, bone inverses and bind matrix are byte-identical; the .glb reloads with 11/11 bones, its weights and all keys.
 
 ## What could not be tested here
 
@@ -160,6 +183,8 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | CLAY | Dots: balls / rings / cubes / spikes (when Dots is picked) | `dotsIc` |
 | CLAY | Other hand smooths: on / off | `supportIc` |
 | CLAY | New asset / Back to the figure | `assetIc` / `backFigureIc` |
+| CLAY | Controls: Substance / Atelier | `controllerIc` |
+| CLAY | Controller map | `controllerIc` |
 | CLAY | Sculpt together / Together: N people | `togetherIc` |
 | CLAY | My avatar: <look> | `lookIc` |
 | CLAY | My avatar colours: my colour / <gradient> | `gradientIc` |
@@ -207,9 +232,9 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | LAYERS | Budget: all / 5k / 20k / 50k / 100k | `budgetIc` |
 | LAYERS | Save clay | `floppy` |
 
-New icons in this package (63): `clayIc`, `flattenIc`, `pinchIc`, `scrapeIc`, `smearIc`, `dotsIc`, `opAddIc`, `opSubIc`, `opPaintIc`, `opIntersectIc`, `tintIc`, `symBoth`, `steadyIc`, `falloffIc`, `shapesIc`, `layersIc`, `primSphere`, `primCube`, `primCylinder`, `primCone`, `primTorus`, `primCapsule`, `placeShapeIc`, `applyShapeIc`, `dropShapeIc`, `blendIc`, `makeClayIc`, `holdIc`, `clayFigIc`, `layerAddIc`, `dupIc`, `mergeIc`, `groupIc`, `ungroupIc`, `mergeGroupIc`, `trashIc`, `remeshIc`, `detailIc`, `budgetIc`, `layerPickIc`, `assetIc`, `backFigureIc`, `finishIc`, `supportIc`, `motionIc`, `pulseIc`, `pulseSpeedIc`, `repeatIc`, `recordFaceIc`, `playMoveIc`, `emblemIc`, `spinIc`, `rodIc`, `twistIc`, `taperIc`, `wheelIc`, `gradientIc`, `skinIc`, `lookIc`, `ballIc`, `joinIc`, `togetherIc`, `sculptNextIc`.
+New icons in this package (64): `clayIc`, `flattenIc`, `pinchIc`, `scrapeIc`, `smearIc`, `dotsIc`, `opAddIc`, `opSubIc`, `opPaintIc`, `opIntersectIc`, `tintIc`, `symBoth`, `steadyIc`, `falloffIc`, `shapesIc`, `layersIc`, `primSphere`, `primCube`, `primCylinder`, `primCone`, `primTorus`, `primCapsule`, `placeShapeIc`, `applyShapeIc`, `dropShapeIc`, `blendIc`, `makeClayIc`, `holdIc`, `clayFigIc`, `layerAddIc`, `dupIc`, `mergeIc`, `groupIc`, `ungroupIc`, `mergeGroupIc`, `trashIc`, `remeshIc`, `detailIc`, `budgetIc`, `layerPickIc`, `assetIc`, `backFigureIc`, `finishIc`, `supportIc`, `motionIc`, `pulseIc`, `pulseSpeedIc`, `repeatIc`, `recordFaceIc`, `playMoveIc`, `emblemIc`, `spinIc`, `rodIc`, `twistIc`, `taperIc`, `wheelIc`, `gradientIc`, `skinIc`, `lookIc`, `ballIc`, `joinIc`, `controllerIc`, `togetherIc`, `sculptNextIc`.
 
-## One lesson step per tool (63)
+## One lesson step per tool (65)
 
 | Tool | The step (shown on the lesson card, with a Show me button for the tile) | Tile it points to |
 |---|---|---|
@@ -272,6 +297,8 @@ New icons in this package (63): `clayIc`, `flattenIc`, `pinchIc`, `scrapeIc`, `s
 | Skins | With the Gradient tool picked, tap Skin for marble, wood, scales, speckle, stripes, spots, camo or clouds, then tap an object: the pattern wraps round it in your gradient's colours. | Skin: marble (`skinIc`) |
 | Look tool | Pick a look with the Look tile (gloss, metal, chrome, glass, pearl, velvet, glow, toon...), then pick the Look tool and pinch an object or clay: it takes that look. | Look tool (`lookIc`) |
 | Join pieces | When your rods and balls are where you want them, tap Join pieces: they become one object, so Hold moves it, Spin turns it and Save keeps it as one. | Join pieces (`joinIc`) |
+| Substance controls | With Controls on Substance, hold your support hand's lower button: the Palette appears; point with your tool hand and pull the trigger to choose. Let go and it tucks away. | Controls: Substance (`controllerIc`) |
+| Controller map | Tap Controller map to hear what every button does. Or rest your thumb on a button for half a second: it tells you its job. | Controller map (`controllerIc`) |
 | Your avatar | Tap My avatar to choose how you look to the people you sculpt with: pearl, glow, metal, glass and more; My avatar colours puts a gradient on you, feet to head. | My avatar: pearl (`lookIc`) |
 | Sculpt together | Tap Sculpt together; when your collaborator taps it too, you see them as a person in the look they chose, with their name over them, and everything either of you makes appears for both. Undo takes back only your own steps. | Sculpt together (`togetherIc`) |
 | Saw on clay | Pick Saw on the first Sculpt page and sweep it through clay with the trigger held: a slit as wide as the Size ring is cut, the rest stays. It saws figures and objects as before. | Saw (`cutIc`) |
