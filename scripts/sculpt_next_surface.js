@@ -20,18 +20,28 @@ export function makeSculpt(THREE) {
   function prepare(geometry, influences) {
     const pos = geometry.attributes.position, n = pos.count, A = pos.array;
     geometry.computeBoundingBox(); const bb = geometry.boundingBox, size = bb.getSize(new V3());
-    const q = 1e-5, weld = new Map(), group = new Int32Array(n), first = [];
-    for (let i = 0; i < n; i++) { const k = Math.round(A[i * 3] / q) + '_' + Math.round(A[i * 3 + 1] / q) + '_' + Math.round(A[i * 3 + 2] / q); let g = weld.get(k); if (g === undefined) { g = first.length; weld.set(k, g); first.push(i); } group[i] = g; }
+    /* points at the same place (to 0.01 mm) are one group: a number hash with an exact check (text keys were most of this function's time) */
+    const q = 1e-5, weld = new Map(), group = new Int32Array(n), first = [], QX = new Int32Array(n), QY = new Int32Array(n), QZ = new Int32Array(n), chain = new Int32Array(n).fill(-1);
+    for (let i = 0; i < n; i++) {
+      const x = QX[i] = Math.round(A[i * 3] / q), y = QY[i] = Math.round(A[i * 3 + 1] / q), z = QZ[i] = Math.round(A[i * 3 + 2] / q), h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) | 0;
+      let g = -1, c = weld.get(h); const head = c === undefined ? -1 : c; for (let j = head; j >= 0; j = chain[j]) { const f = first[j]; if (QX[f] === x && QY[f] === y && QZ[f] === z) { g = j; break; } }
+      if (g < 0) { g = first.length; first.push(i); chain[g] = head; weld.set(h, g); } group[i] = g;
+    }
     const G = first.length, mcount = new Int32Array(G + 1); for (let i = 0; i < n; i++) mcount[group[i] + 1]++; for (let g = 0; g < G; g++) mcount[g + 1] += mcount[g];
     const mitems = new Int32Array(n), fill = mcount.slice(0, G); for (let i = 0; i < n; i++) mitems[fill[group[i]]++] = i;
     const members = []; for (let g = 0; g < G; g++) members.push(mitems.subarray(mcount[g], mcount[g + 1]));
     const idx = geometry.index ? geometry.index.array : null, triN = (idx ? idx.length : n) / 3, TG = new Int32Array(triN * 3);
     for (let t = 0; t < triN * 3; t++) TG[t] = group[idx ? idx[t] : t];
-    const nbS = Array.from({ length: G }, () => new Set()), tcount = new Int32Array(G + 1);
-    for (let t = 0; t < triN; t++) { const a = TG[t * 3], b = TG[t * 3 + 1], c = TG[t * 3 + 2]; nbS[a].add(b); nbS[a].add(c); nbS[b].add(a); nbS[b].add(c); nbS[c].add(a); nbS[c].add(b); tcount[a + 1]++; tcount[b + 1]++; tcount[c + 1]++; }
+    /* neighbours: every triangle's six directed edges, counted, filled and de-duplicated per group into one packed array (no Set per group) */
+    const tcount = new Int32Array(G + 1), ecount = new Int32Array(G + 1);
+    for (let t = 0; t < triN; t++) { const a = TG[t * 3], b = TG[t * 3 + 1], c = TG[t * 3 + 2]; ecount[a + 1] += 2; ecount[b + 1] += 2; ecount[c + 1] += 2; tcount[a + 1]++; tcount[b + 1]++; tcount[c + 1]++; }
+    for (let g = 0; g < G; g++) ecount[g + 1] += ecount[g]; const eitems = new Uint32Array(ecount[G]), ef = ecount.slice(0, G);
+    for (let t = 0; t < triN; t++) { const a = TG[t * 3], b = TG[t * 3 + 1], c = TG[t * 3 + 2]; eitems[ef[a]++] = b; eitems[ef[a]++] = c; eitems[ef[b]++] = a; eitems[ef[b]++] = c; eitems[ef[c]++] = a; eitems[ef[c]++] = b; }
+    const nbAll = new Uint32Array(ecount[G]), nb = new Array(G); let w = 0;
+    for (let g = 0; g < G; g++) { const s0 = w, seg = eitems.subarray(ecount[g], ecount[g + 1]); seg.sort(); for (let k = 0; k < seg.length; k++) if ((k === 0 || seg[k] !== seg[k - 1]) && seg[k] !== g) nbAll[w++] = seg[k]; nb[g] = nbAll.subarray(s0, w); }
     for (let g = 0; g < G; g++) tcount[g + 1] += tcount[g]; const titems = new Int32Array(tcount[G]), tf = tcount.slice(0, G);
     for (let t = 0; t < triN; t++) for (let k = 0; k < 3; k++) titems[tf[TG[t * 3 + k]]++] = t;
-    const st = { geometry, n, G, group, members, first: Int32Array.from(first), nb: nbS.map(s => Uint32Array.from(s)), TG, tcount, titems, cell: Math.max(size.x, size.y, size.z) / 48 || 1, origin: bb.min.clone(), grid: null, eff: new Float32Array(G * 3), nrm: new Float32Array(G * 3), influences: influences || null, kind: 'next' };
+    const st = { geometry, n, G, group, members, first: Int32Array.from(first), nb, TG, tcount, titems, cell: Math.max(size.x, size.y, size.z) / 48 || 1, origin: bb.min.clone(), grid: null, eff: new Float32Array(G * 3), nrm: new Float32Array(G * 3), influences: influences || null, kind: 'next' };
     computeEff(st); computeNormals(st, null); rebuildGrid(st); return st;
   }
   /* the shape as seen: rest plus each key times its strength (per welded group, read at its first point) */

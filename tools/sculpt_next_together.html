@@ -1,0 +1,35 @@
+<!doctype html><meta charset="utf-8"><title>Sculpt together test</title>
+<script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script>
+<body style="font:14px system-ui;background:#120d1b;color:#f1ebe0"><pre id="o">loading…</pre>
+<script type="module">
+/* One headset for tools/sculpt_next_together_run.mjs (dev only): the next engine, the built test figure, and a real WebSocket to the relay (?relay=ws://…). The runner drives two of these pages through
+   window.API with fake hand frames sent every 16 ms of real time, and compares their checksums. ?three=128 or 186. */
+const q = new URLSearchParams(location.search), v = q.get('three') || '186', relay = q.get('relay'), out = document.getElementById('o');
+const load = src => new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error(src + ' missing')); document.head.appendChild(s); });
+let T; if (v === '128') { await load('/pe_lib/three.min.js'); T = window.THREE; } else T = await import('/pe_lib/bst_three_0.186.1.module.js');
+const eng = await import('/pe_lib/sculpt_next_engine.js'), { makeTestFigure } = await import('/pe_lib/sculpt_next_testkit.js'), { connectWs } = await import('/pe_lib/sculpt_next_collab.js');
+const V3 = T.Vector3, Q = T.Quaternion, scene = new T.Scene(), F = makeTestFigure(T); scene.add(F.root); F.root.updateMatrixWorld(true);
+const says = [], vs = eng.createVrSculpt(T, null, { setBench() {}, say: t => { says.push(t); out.textContent = says.slice(-12).join('\n'); }, figure: () => F.root, props: () => [], addObject: o => { if (!o.parent) scene.add(o); }, removeObject: o => { if (o.parent) o.parent.remove(o); } });
+vs.enter(F.root); vs.set.stabilize(0); window.__vsx = vs; window.__F = F; if (q.get('warm')) { const t = performance.now(); F.root.traverse(o => { if (o.isMesh) vs.entryOf(o); }); window.__warmMs = performance.now() - t; }
+const sleep = ms => new Promise(r => setTimeout(r, ms)), frameMs = [], net = { sent: 0, bytes: 0, got: 0, gotBytes: 0, biggest: 0 };
+const hand = (tip, pinch) => ({ id: 'r', tip: new V3(...tip), dir: new V3(0, 0, -1), quat: new Q(), pinch });
+let phase = 'start'; const phaseMax = {};
+const frame = hands => { vs.together.resetSlow && vs.together.resetSlow(); const t = performance.now(); vs.frame(hands, 0.016); const d = performance.now() - t; frameMs.push(d); if (!phaseMax[phase] || d > phaseMax[phase][0]) { const st = vs.together.stats(); phaseMax[phase] = [+d.toFixed(1), st.slowWhat + ' ' + st.slowMs]; } };
+window.API = {
+  async start(name) {
+    const tr = connectWs(relay), s0 = tr.send, on0 = () => tr.onmessage; tr.send = m => { const s = JSON.stringify(m); net.sent++; net.bytes += s.length; s0(m); };
+    const t0 = performance.now(); vs.together.start({ transport: tr, name }); const inner = tr.onmessage; tr.onmessage = m => { const n = JSON.stringify(m).length; net.got++; net.gotBytes += n; net.biggest = Math.max(net.biggest, n); inner(m); }; void on0;
+    for (let i = 0; i < 1500 && vs.together.state !== 'synced'; i++) { frame([]); await sleep(16); } return { state: vs.together.state, ms: Math.round(performance.now() - t0) };
+  },
+  async set(k, val) { vs.set[k](val); frame([]); await sleep(16); return vs.cfg[k]; },
+  async draw(pts) { for (const p of pts) { frame([hand(p, true)]); await sleep(16); } frame([hand(pts[pts.length - 1], false)]); await sleep(16); return pts.length; },
+  async tap(fn, ...a) { const r = fn === 'apply' ? vs.shapes.applyPending(true) : fn === 'emblem' ? vs.makeEmblem({ at: new V3(...a[0]) }) : fn === 'spin' ? vs.spin(vs.assets().find(x => x.kind === 'emblem').object, a[0] || 0) : fn === 'undo' ? vs.undo() : null; frame([]); await sleep(16); return !!r; },
+  async idle(ms) { const t = performance.now(); while (performance.now() - t < ms) { frame([]); await sleep(16); } return true; },
+  async settle() { let calm = 0; for (let i = 0; i < 3000 && calm < 20; i++) { frame([]); await sleep(16); calm = vs.together.waiting === 0 ? calm + 1 : 0; } return calm >= 20; },
+  sum: () => vs.together.checksum(), parts: () => vs.together.checksum(true), dbg: () => ({ emblemQ: (vs.assets().find(a => a.kind === 'emblem') || { object: { quaternion: new Q() } }).object.quaternion.toArray(), rounds: vs.together.rounds() }), stop: () => vs.together.stop(),
+  info: () => { const s = frameMs.slice().sort((a, b) => a - b); return { people: vs.together.people().map(p => p.name).join(','), layers: vs.clay.allLayers().length, assets: vs.assets().map(a => a.kind).join(','), keys: Object.keys(F.body.morphTargetDictionary || {}).join(','), frameAvg: +(s.reduce((a, b) => a + b, 0) / Math.max(1, s.length)).toFixed(2), frameP99: +(s[Math.floor(s.length * 0.99)] || 0).toFixed(2), frameMax: +(s[s.length - 1] || 0).toFixed(2), net, says: says.slice(-6), warmMs: window.__warmMs }; },
+  resetTimes: () => { frameMs.length = 0; },
+  mark: p => { phase = p; return true; }, phases: () => phaseMax,
+};
+out.textContent = 'ready'; window.__ready = true;
+</script>

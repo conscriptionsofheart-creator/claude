@@ -14,7 +14,7 @@ export function makeClay(THREE, env) {
   const V3 = THREE.Vector3, M4 = THREE.Matrix4, Q = THREE.Quaternion, say = t => { try { env.say && env.say(t); } catch (e) { /* the host's voice is optional */ } };
   const LINEAR = parseInt(THREE.REVISION, 10) >= 152 && !(THREE.ColorManagement && THREE.ColorManagement.enabled === false), SL = new Float32Array(1025); for (let i = 0; i <= 1024; i++) { const c = i / 1024; SL[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
   const toLinear = a => { for (let i = 0; i < a.length; i++) { const v = a[i] <= 0 ? 0 : a[i] >= 1 ? 1 : a[i]; a[i] = SL[Math.round(v * 1024)]; } };
-  const works = [], S = { queue: [], jobsDone: 0, pumpMs: 0, jobs: new Map(), active: null, layerN: 0, workN: 0, groupN: 0, worker: null, workerOk: false, inflight: 0, jobId: 0, meshMs: 0, meshCount: 0, lastDabMs: 0, dabs: 0, dabMs: 0 };
+  const works = [], S = { queue: [], jobsDone: 0, pumpMs: 0, jobs: new Map(), active: null, layerN: 0, workN: 0, groupN: 0, worker: null, workerOk: false, inflight: 0, jobId: 0, slowMs: 0, slowWhat: '', meshMs: 0, meshCount: 0, lastDabMs: 0, dabs: 0, dabMs: 0 };
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   /* ---------- the worker (off the page's thread); if it cannot start, meshing runs on the page within a time budget per frame ---------- */
@@ -153,7 +153,7 @@ export function makeClay(THREE, env) {
 
   /* ---------- a clay stroke: begin, step (one dab between the last point and this one), end (one undo step) ---------- */
   function strokeBegin(L, opts) {
-    const st = { L, work: L.work, snaps: new Map(), last: null, lastDab: null, hold: 0, opts, temp: null, changed: false, dots: 0, travel: 0, jobs: 0, ending: false, done: false };
+    const st = { who: env.who ? env.who() : undefined, L, work: L.work, snaps: new Map(), last: null, lastDab: null, hold: 0, opts, temp: null, changed: false, dots: 0, travel: 0, jobs: 0, ending: false, done: false };
     if (opts.op === 'intersect' && (opts.mode === 'clay' || opts.mode === 'dots')) st.temp = createField({ h: L.field.h, color: L.field.base });   /* intersect: the stroke is gathered first, then only the clay inside it stays */
     return st;
   }
@@ -199,27 +199,28 @@ export function makeClay(THREE, env) {
       }
       if (box) gens.push([box, !!(st.temp && (mode === 'clay' || mode === 'dots'))]);
     }
-    gens.forEach(([g, tmp]) => { S.queue.push({ gen: g, st, L, tmp, ms: 0 }); st.jobs++; }); S.dabs++; void t0; return gens.length > 0;
+    gens.forEach(([g, tmp]) => { qpush({ gen: g, st, L, tmp, ms: 0 }); st.jobs++; }); S.dabs++; void t0; return gens.length > 0;
   }
   /* ---------- the queue: dabs run in order, a slice at a time, within a few ms a frame ---------- */
   function pump(budgetMs) {
     const t0 = now(); let n = 0;
     while (S.queue.length) {
-      const j = S.queue[0], t1 = now(), r = j.gen.next(); j.ms += now() - t1;
+      const j = S.queue[0], t1 = now(); S.cur = j; S.ins = 1; let r; try { r = j.gen.next(); } finally { S.cur = null; } const dj = now() - t1; j.ms += dj; if (dj > S.slowMs) { S.slowMs = dj; S.slowWhat = j.label || (j.st ? 'dab ' + (j.st.opts && j.st.opts.mode) : 'job'); }
       if (r.done && j.onDone) { S.queue.shift(); S.jobsDone++; try { j.onDone(r.value); } catch (e) { console.warn('clay job', e); } }
       else if (r.done) { S.queue.shift(); j.st.jobs--; S.dabMs += j.ms; S.jobsDone++; S.lastDabMs = j.ms; if (r.value) { j.st.changed = true; if (j.all) markAll(j.L); else if (!j.tmp) markBox(j.L, r.value); } if (j.st.ending && !j.st.jobs) finishStroke(j.st); }
       if (++n % 4 === 0 && now() - t0 > budgetMs) break;
     }
     S.pumpMs = now() - t0;
   }
-  const drainQueue = () => { if (S.queue.length) pump(Infinity); };
-  const enqueue = (gen, onDone) => { S.queue.push({ gen, onDone, ms: 0 }); };   /* any sliced job (a generator) with something to do when it ends */
+  const drainQueue = () => { if (S.queue.length && !S.cur) pump(Infinity); };   /* never from inside a running job (an ordered step of a shared session runs as a job) */
+  function qpush(item) { if (S.cur) S.queue.splice(S.ins++, 0, item); else S.queue.push(item); }   /* a job started by a running job goes right after it, so every headset runs the same order */
+  const enqueue = (gen, onDone, label) => { qpush({ gen, onDone, ms: 0, label }); };   /* any sliced job (a generator) with something to do when it ends */
   const backlog = () => S.queue.length;
   /* the stroke's undo step is made when its last queued dab has run */
   function strokeEnd(st, label) {
     st.label = label; if (st.ending) return true;
-    if (st.temp && !st.temp.empty()) { S.queue.push({ gen: opIntersectFieldGen(st.L.field, st.temp, 0, snapFor(st, st.L)), st, L: st.L, tmp: false, ms: 0, all: true }); st.jobs++; st.temp = null; }   /* only what the stroke covered stays: queued like any dab */
-    if (st.half) { S.queue.push({ gen: opIntersectFieldGen(st.L.field, st.half, 0, snapFor(st, st.L)), st, L: st.L, tmp: false, ms: 0, all: true }); st.jobs++; st.half = null; }
+    if (st.temp && !st.temp.empty()) { qpush({ gen: opIntersectFieldGen(st.L.field, st.temp, 0, snapFor(st, st.L)), st, L: st.L, tmp: false, ms: 0, all: true }); st.jobs++; st.temp = null; }   /* only what the stroke covered stays: queued like any dab */
+    if (st.half) { qpush({ gen: opIntersectFieldGen(st.L.field, st.half, 0, snapFor(st, st.L)), st, L: st.L, tmp: false, ms: 0, all: true }); st.jobs++; st.half = null; }
     st.ending = true; if (!st.jobs) return finishStroke(st); return true;
   }
   function finishStroke(st) {
@@ -228,7 +229,7 @@ export function makeClay(THREE, env) {
     if (!st.changed) return false;
     const snaps = [...st.snaps.entries()].filter(([, m]) => m.size); if (!snaps.length) return false;
     const flipTo = list => list.map(([Lr, m]) => { const back = Lr.field.restore(m); markBricks(Lr, [...m.keys()]); return [Lr, back]; });
-    let state = snaps; const entry = { label: label || 'clay', undo: () => { state = flipTo(state); }, redo: () => { state = flipTo(state); } };
+    let state = snaps; const entry = { who: st.who, label: label || 'clay', undo: () => { state = flipTo(state); }, redo: () => { state = flipTo(state); }, touch: snaps.map(([Lr]) => 'L:' + Lr.id) };
     env.pushUndo && env.pushUndo(entry); env.dirty && env.dirty(L.work.group); return true;
   }
 
@@ -246,7 +247,7 @@ export function makeClay(THREE, env) {
     }
     if (!any) return false; if (snapOuter) { env.dirty && env.dirty(L.work.group); return true; }
     let state = [[L, snap]]; const flip = () => { state = state.map(([Lr, m]) => { const back = Lr.field.restore(m); markBricks(Lr, [...m.keys()]); return [Lr, back]; }); };
-    env.pushUndo && env.pushUndo({ label: label || 'shape', undo: flip, redo: flip }); env.dirty && env.dirty(L.work.group); return true;
+    env.pushUndo && env.pushUndo({ label: label || 'shape', undo: flip, redo: flip, touch: ['L:' + L.id] }); env.dirty && env.dirty(L.work.group); return true;
   }
   /* one shape inside a stroke (the saw's slab, Carve's ball): queued, sliced, one undo for the sweep. intoTemp: gathered for a keep-inside, applied when the stroke ends. */
   function shapeStep(st, kind, worldMatrix, mode, blend, sym, count, intoTemp) {
@@ -256,7 +257,7 @@ export function makeClay(THREE, env) {
       const Ml = new M4().copy(L.group.matrixWorld).invert().multiply(Mw), Mi = new M4().copy(Ml).invert(), e = Mi.elements, s = new V3(); Ml.decompose(new V3(), new Q(), s); const smin = Math.min(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z));
       const dist = (x, y, z) => sdPrim(kind, e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14], 0) * smin;
       const bb = new THREE.Box3(new V3(-1, -1, -1), new V3(1, 1, 1)).applyMatrix4(Ml);
-      S.queue.push({ gen: opShapeGen(intoTemp ? st.temp : L.field, [bb.min.x, bb.min.y, bb.min.z], [bb.max.x, bb.max.y, bb.max.z], dist, intoTemp ? 'add' : mode, blend, null, intoTemp ? null : snapFor(st, L), 1), st, L, tmp: !!intoTemp, ms: 0 }); st.jobs++;
+      qpush({ gen: opShapeGen(intoTemp ? st.temp : L.field, [bb.min.x, bb.min.y, bb.min.z], [bb.max.x, bb.max.y, bb.max.z], dist, intoTemp ? 'add' : mode, blend, null, intoTemp ? null : snapFor(st, L), 1), st, L, tmp: !!intoTemp, ms: 0 }); st.jobs++;
     }
     return true;
   }
@@ -275,7 +276,7 @@ export function makeClay(THREE, env) {
   function setFinish(L, f) { if (!L) return; const was = L.finish || 'satin'; if (was === f) return; applyFinish(L, f); env.pushUndo && env.pushUndo({ label: 'finish', undo: () => applyFinish(L, was), redo: () => applyFinish(L, f) }); env.dirty && env.dirty(L.work.group); say(L.name + ': ' + f + ' finish.'); }
 
   /* ---------- the layer list ---------- */
-  function structural(label, doIt, undoIt) { doIt(); env.pushUndo && env.pushUndo({ label, undo: undoIt, redo: doIt }); }
+  function structural(label, doIt, undoIt, touch) { doIt(); env.pushUndo && env.pushUndo({ label, undo: undoIt, redo: doIt, touch: touch || (S.active ? ['W:' + S.active.work.id] : ['*']) }); }
   function addLayer() {
     const w = S.active ? S.active.work : works.find(x => x.group.parent); if (!w) { say('Make some clay first: pick Clay and pinch in the air.'); return null; }
     const idx = w.layers.indexOf(S.active) + 1; let L = null, prev = S.active;
@@ -339,6 +340,13 @@ export function makeClay(THREE, env) {
     const L = S.active; if (!L) return false; if (remeshJobs.some(j => j.L === L)) { say(L.name + ' is already being remeshed.'); return false; }
     const old = L.field, bb = old.bounds(); if (!bb) return false; const oh = old.h, nf = createField({ h, color: old.base }), list = [];
     for (let bz = Math.floor(bb[2] * oh / h / B) - 1; bz <= Math.floor(bb[5] * oh / h / B) + 1; bz++) for (let by = Math.floor(bb[1] * oh / h / B) - 1; by <= Math.floor(bb[4] * oh / h / B) + 1; by++) for (let bx = Math.floor(bb[0] * oh / h / B) - 1; bx <= Math.floor(bb[3] * oh / h / B) + 1; bx++) list.push([bx, by, bz]);
+    if (env.ordered && env.ordered()) {   /* sculpting together: the remesh runs as jobs in the shared order (a few bricks a slice), so every headset swaps the layer at the same point */
+      const w0 = env.who ? env.who() : undefined, t0 = now();
+      enqueue((function* () { for (let i = 0; i < list.length; i++) { const [bx, by, bz] = list[i]; remeshBrick(old, nf, bx, by, bz); if (i % 48 === 47) yield; }
+        const swap = f => { L.chunks.forEach(m => { L.group.remove(m); m.geometry.dispose(); }); L.chunks.clear(); L.chunkVer.clear(); L.dirty.clear(); L.field = f; markAll(L); };
+        swap(nf); S.lastRemeshMs = now() - t0; env.pushUndo && env.pushUndo({ who: w0, label: 'remesh', undo: () => swap(old), redo: () => swap(nf), touch: ['L:' + L.id] }); })());
+      say('Remeshing ' + L.name + ' at ' + Math.round(h * 1000) + ' mm detail…'); return true;
+    }
     remeshJobs.push({ L, old, nf, list, i: 0, ms: 0, ver: old.version }); say('Remeshing ' + L.name + ' at ' + Math.round(h * 1000) + ' mm detail…'); return true;
   }
   function remeshBrick(old, nf, bx, by, bz) {
@@ -377,7 +385,7 @@ export function makeClay(THREE, env) {
       env.pushUndo && env.pushUndo({ label: 'make clay', undo: () => { mesh.visible = vis; w.group.remove(L.group); const j = w.layers.indexOf(L); if (j >= 0) w.layers.splice(j, 1); }, redo: () => { mesh.visible = false; w.group.add(L.group); w.layers.push(L); S.active = L; } });
       env.dirty && env.dirty(w.group); say('"' + (mesh.name || 'The object') + '" is clay now (' + Math.round(now() - t0) + ' ms). The original is hidden; undo brings it back.'); return L;
     };
-    const job = env.syncMake ? null : work('voxel', { tris: tri, h: L.field.h, band: L.field.band, base: L.field.base });
+    const job = env.syncMake && env.syncMake() ? null : work('voxel', { tris: tri, h: L.field.h, band: L.field.band, base: L.field.base });
     if (job) { say('Turning "' + (mesh.name || 'the object') + '" into clay…'); return job.then(finish, () => finish(voxelizeTris(tri, L.field.h, L.field.band, L.field.base))); }
     return finish(voxelizeTris(tri, L.field.h, L.field.band, L.field.base));
   }
@@ -401,11 +409,30 @@ export function makeClay(THREE, env) {
     w.layers.forEach(L => { if (!L.group.visible) return; const geo = bakeGeometry(L); if (!geo.index.count) return; const m = new THREE.Mesh(geo, L.material.clone()); m.name = L.name; m.matrix.copy(L.group.matrix); m.matrix.decompose(m.position, m.quaternion, m.scale); g.add(m); });
     g.updateMatrixWorld(true); return g;
   }
+  /* sculpting together: the whole clay state as plain data (a newcomer's snapshot), and back. enc/dec are sculpt_next_collab.js encodeField / decodeFieldInto. */
+  const trs = o => [o.position.toArray(), o.quaternion.toArray(), o.scale.toArray()], setTrs = (o, t) => { o.position.fromArray(t[0]); o.quaternion.fromArray(t[1]); o.scale.fromArray(t[2]); o.updateMatrix(); o.updateMatrixWorld(true); };
+  const runGen = g => { let r; do r = g.next(); while (!r.done); return r.value; };
+  function* exportStateGen(enc) {   /* a layer per slice (yield between), so a big work never holds a frame up */
+    const out = { n: [S.layerN, S.workN, S.groupN], works: [] };
+    for (const w of works) { if (!w.group.parent) continue; const ws = { id: w.id, name: w.name, t: trs(w.group), layers: [] }; out.works.push(ws);
+      for (const L of w.layers) { ws.layers.push({ id: L.id, name: L.name, t: trs(L.group), vis: L.group.visible, locked: L.locked, groupId: L.groupId, finish: L.finish || 'satin', field: enc(L.field, INSIDE) }); yield; } }
+    return out;
+  }
+  function* importStateGen(st, dec) {
+    drainQueue(); remeshJobs.length = 0; works.slice().forEach(w => detachWork(w)); works.length = 0; layerById.clear(); S.active = null;
+    for (const ws of st.works) {
+      const w = newWork(null, null); w.id = ws.id; w.name = ws.name; w.group.name = ws.name; setTrs(w.group, ws.t);
+      for (const ls of ws.layers) { const f = dec(createField({ h: ls.field.h, band: ls.field.band, color: ls.field.base }), ls.field, INSIDE), L = newLayer(w, { field: f, name: ls.name, groupId: ls.groupId }); setTrs(L.group, ls.t);
+        layerById.delete(L.id); L.id = ls.id; layerById.set(L.id, L); L.group.visible = ls.vis; L.locked = ls.locked; applyFinish(L, ls.finish); yield; }
+    }
+    [S.layerN, S.workN, S.groupN] = st.n; return true;
+  }
+  const exportState = enc => runGen(exportStateGen(enc)), importState = (st, dec) => runGen(importStateGen(st, dec));
   function stats() { let tris = 0, chunks = 0, bytes = 0, bricks = 0; allLayers().forEach(L => { if (!live(L)) return; L.chunks.forEach(m => { tris += m.geometry.index.count / 3; chunks++; }); bytes += L.field.bytes(); bricks += L.field.bricks.size; }); return { works: works.filter(w => w.group.parent).length, layers: allLayers().filter(live).length, tris, chunks, bricks, kB: Math.round(bytes / 1024), pending: pending(), worker: !!S.worker, workerOk: S.workerOk, dabs: S.dabs, dabMsAvg: S.jobsDone ? S.dabMs / S.jobsDone : 0, queue: S.queue.length, pumpMs: S.pumpMs, meshMsPerChunk: S.meshCount ? S.meshMs / S.meshCount : 0 }; }
   function resetStats() { S.dabs = 0; S.jobsDone = 0; S.dabMs = 0; S.meshMs = 0; S.meshCount = 0; }
   return {
     S, works, allLayers, live, newWork, newLayer, ensureLayer, hit, nearBox, strokeBegin, strokeStep, strokeEnd, applyShapeWorld, copiesWorld, copiesMatrix, tick, flush, pending,
-    voxelizeField: voxelize, work, shapeStep, halfStep, enqueue, detachWork, attachWork, pump, drainQueue, backlog, setFinish, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf,
+    layerById: id => allLayers().find(l => l.id === id) || null, voxelizeField: voxelize, work, shapeStep, halfStep, enqueue, detachWork, attachWork, pump, drainQueue, backlog, setFinish, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf, exportState, importState, exportStateGen, importStateGen,
     get active() { return S.active; }, set active(L) { S.active = L; },
   };
 }

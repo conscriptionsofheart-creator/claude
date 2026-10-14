@@ -207,7 +207,7 @@ export async function runNextTests(T, ctx) {
 
   /* ---------- Ruth's emblem in clay, sliced (no frame over budget), six coloured layers, a spin that eases, a Spin clip in the .glb; one undo removes it ---------- */
   await section('emblem', async () => {
-    const vs = fresh(); const t0 = now(), e = vs.makeEmblem({ at: new V3(0, 1.3, -0.6) }), g = e.object; res.em_buildMs = Math.round(now() - t0);
+    const vs = fresh(); const t0 = now(), e = vs.makeEmblem({ at: new V3(0, 1.3, -0.6) }), g = e.object; let slices = 0, sliceMax = 0; while (!e.ready() && slices < 500) { const t1 = now(); vs.clay.pump(0); sliceMax = Math.max(sliceMax, now() - t1); slices++; } res.em_buildMs = Math.round(now() - t0); res.em_slices = slices; res.em_sliceMaxMs = r2(sliceMax); res.em_ready = b(e.ready());
     const parts = g.children.filter(o => o.isMesh); res.em_parts = parts.map(o => o.name).join(', '); res.em_tris = parts.reduce((a, o) => a + o.geometry.index.count / 3, 0);
     const avg = name => { const m = parts.find(o => o.name === name), C = m.geometry.attributes.color.array; let r = 0, gg = 0, bb = 0; for (let i = 0; i < C.length; i += 3) { r += C[i]; gg += C[i + 1]; bb += C[i + 2]; } const n = C.length / 3; return [r / n, gg / n, bb / n]; };
     const bl = avg('Blue figure'), or = avg('Orange figure'); res.em_blueIsBlue = b(bl[2] > bl[0] * 1.5); res.em_orangeIsWarm = b(or[0] > or[2] * 1.5);
@@ -224,6 +224,60 @@ export async function runNextTests(T, ctx) {
     const fm = run(vs, pts); const A = vs.assets(), rod = A.find(a => a.kind === 'rod'); res.rod_made = b(!!rod); res.rod_frameMs = st(fm);
     if (rod) { const g = rod.object.geometry; res.rod_tris = g.index.count / 3; g.computeBoundingBox(); const sz = g.boundingBox.getSize(new V3()); res.rod_followsPath = b(sz.x > 0.25 && sz.y > 0.12); }
     res.rod_undo = b(vs.undo() && !vs.assets().length); res.rod_redo = b(vs.redo() && vs.assets().length === 1); cleanup(vs);
+  });
+
+  /* ---------- sculpt together: 2 engines, then 4, over an in-page relay (same numbering and echo as the real one); every headset must hold the same work ---------- */
+  await section('together', async () => {
+    const { makeLocalRelay } = await import('/pe_lib/sculpt_next_collab.js'), { makeTestFigure } = await import('/pe_lib/sculpt_next_testkit.js'), relay = makeLocalRelay(), peers = [];
+    const mk = name => { const world = new T.Group(); world.name = '_world_' + name; scene.add(world); const F = makeTestFigure(T); world.add(F.root); const says = [];
+      const vs = ctx.createVrSculpt(T, null, mkHost({ figure: () => F.root, say: t => says.push(t), addObject: o => { if (!o.parent) world.add(o); } })); vs.enter(F.root); vs.set.stabilize(0); const p = { name, vs, F, world, says }; peers.push(p); return p; };
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    const settle = async () => { for (let k = 0; k < 2000; k++) { await tick(); peers.forEach(p => { if (p.vs.together.on) p.vs.flush(); }); if (relay.idle() && peers.every(p => !p.vs.together.on || p.vs.together.waiting === 0)) { await tick(); if (relay.idle()) return k; } } return -1; };
+    const sums = list => list.map(p => p.vs.together.checksum());
+    const same = list => { const v = sums(list); return b(v.every(x => x === v[0])); };
+    /* hands of several people in the same frames: each step every engine gets its own hand, then the messages travel */
+    const together = async (moves, n) => { const fm = []; for (let i = 0; i < n; i++) { for (const [p, f] of moves) { const t = now(); p.vs.frame(f(i), 0.016); fm.push(now() - t); } await tick(); } for (const [p] of moves) p.vs.frame([], 0.016); await settle(); return fm; };
+    const A = mk('A'), B = mk('B');
+    A.vs.together.start({ transport: relay.connect(), name: 'Ruth' }); await settle(); res.tg_aloneOn = b(A.vs.together.state === 'synced' && A.vs.together.people().length === 1);
+    A.vs.set.mode('clay'); A.vs.set.size(2); await together([[A, i => [hand('r', new V3(-0.12 + i * 0.01, 1.2, -0.5), i < 20)]]], 22);
+    A.vs.set.mode('rod'); await together([[A, i => [hand('r', new V3(0.15 + Math.cos(i / 29 * Math.PI) * 0.1, 1.3 + Math.sin(i / 29 * Math.PI) * 0.1, -0.6), i < 30)]]], 32);
+    res.tg_aloneMade = b(A.vs.clay.works.some(w => w.layers.length) && A.vs.assets().length === 1);
+    /* B joins late: it gets A's clay and rod from the snapshot */
+    B.vs.together.start({ transport: relay.connect(), name: 'Sam' }); await settle();
+    res.tg_joined = b(B.vs.together.state === 'synced' && A.vs.together.people().length === 2 && B.vs.together.people().length === 2);
+    res.tg_snapMs = A.vs.together.stats().snapMs; res.tg_restoreMs = B.vs.together.stats().restoreMs; res.tg_joinSameWork = b(B.vs.clay.works.filter(w => w.group.parent).length === 1 && B.vs.assets().length === 1); res.tg_joinChecksum = same([A, B]);
+    /* both at once on the same clay: A draws a new lump beside it, B inflates A's first stroke */
+    const L = A.vs.clay.allLayers()[0], top = new V3(-0.05, 1.2 + 0.018, -0.5); A.vs.set.mode('clay'); B.vs.set.mode('inflate'); B.vs.set.size(3); B.vs.set.strength(80);
+    const vA0 = vol(L), fm = await together([[A, i => [hand('r', new V3(-0.12 + i * 0.01, 1.26, -0.5), i < 24)]], [B, i => [hand('r', top, i < 24)]]], 26);
+    const LB = B.vs.clay.layerById(L.id); res.tg_bothChanged = b(vol(L) > vA0 * 1.5 && LB && Math.abs(vol(LB) - vol(L)) < 1e-12); res.tg_concurrentSame = same([A, B]); res.tg_frameMs = st(fm);
+    /* a shape placed by B and applied from B's menu (the tap goes through the shared order) */
+    B.vs.set.mode('prim'); B.vs.set.prim('cube'); B.vs.set.size(3); await together([[B, i => [hand('r', new V3(0.05, 1.2, -0.5), i < 3)]]], 4); B.vs.shapes.applyPending(true); await settle();
+    res.tg_shapeOnBoth = b(!B.vs.shapes.live && A.vs.clay.allLayers().length === B.vs.clay.allLayers().length && Math.abs(vol(L) - vol(LB)) < 1e-12); res.tg_shapeSame = same([A, B]);
+    /* undo is your own: A's last step was its clay stroke, but B has changed the same layer since (the cube), so A's undo is refused; B undoes the cube, then A can undo */
+    const nA = A.says.length; A.vs.undo(); await settle(); res.tg_undoRefused = b(A.says.slice(nA).some(t => /would also undo/.test(t)));
+    const v1 = vol(L); B.vs.undo(); await settle(); res.tg_undoOwn = b(vol(L) < v1 - 1e-9); A.vs.undo(); await settle(); res.tg_undoAfter = b(vol(L) < vol(B.vs.clay.layerById(L.id)) + 1e-12 && Math.abs(vol(L) - vol(B.vs.clay.layerById(L.id))) < 1e-12); res.tg_undoSame = same([A, B]);
+    /* B makes the emblem, A sets it spinning: the turn is the same on both (A's frames are the room's clock) */
+    B.vs.makeEmblem({ at: new V3(0.5, 1.3, -0.6) }); await settle(); const eA = A.vs.assets().find(a => a.kind === 'emblem'), eB = B.vs.assets().find(a => a.kind === 'emblem');
+    res.tg_emblemBoth = b(!!eA && !!eB); if (eA) { A.vs.spin(eA.object, 6); await settle(); await together([[A, () => []], [B, () => []]], 40); res.tg_spinTurned = b(eA.object.quaternion.angleTo(new Q()) > 0.05); res.tg_spinSame = b(eA.object.quaternion.angleTo(eB.object.quaternion) < 1e-9); }
+    /* B brushes the figure: a shape key on both figures, the skeleton untouched */
+    const body = B.F.body, P = body.geometry.attributes.position; let bi = 0, bz = -1; for (let i = 0; i < P.count; i++) if (Math.abs(P.getY(i) - 1.25) < 0.04 && P.getZ(i) > bz) { bz = P.getZ(i); bi = i; } const onBody = new V3().fromBufferAttribute(P, bi).applyMatrix4(body.matrixWorld);
+    B.vs.set.mode('inflate'); B.vs.set.size(4); await together([[B, () => [hand('r', onBody, true)]]], 14);
+    const kA = A.F.body.morphTargetDictionary, kB = body.morphTargetDictionary; res.tg_figKeyBoth = b(Object.keys(kA).length === Object.keys(kB).length && Object.keys(kA).length > 1); res.tg_figSame = same([A, B]);
+    if (!res.tg_figSame) { const ma = [], mb = []; A.F.root.traverse(o => { if (o.isMesh) ma.push(o); }); B.F.root.traverse(o => { if (o.isMesh) mb.push(o); }); res.tg_figDbg = ma.map((m, i) => { const n = mb[i], g = m.geometry, h = n.geometry, d = (x, y) => { if (!x || !y || x.length !== y.length) return 'len ' + (x && x.length) + '/' + (y && y.length); let mx = 0; for (let k = 0; k < x.length; k++) mx = Math.max(mx, Math.abs(x[k] - y[k])); return mx; }; return m.name + ' pos ' + d(g.attributes.position.array, h.attributes.position.array) + ' morph ' + (g.morphAttributes.position || []).map((t, k) => d(t.array, (h.morphAttributes.position || [])[k] && h.morphAttributes.position[k].array)).join('/') + ' col ' + d(g.attributes.color && g.attributes.color.array, h.attributes.color && h.attributes.color.array); }).join(' | '); }
+    res.tg_msgBytes = Math.round(relay.bytes / Math.max(1, relay.sent));
+    /* four: C and D join and everyone draws at once */
+    const Cp = mk('C'), D = mk('D'); Cp.vs.together.start({ transport: relay.connect() }); await settle(); D.vs.together.start({ transport: relay.connect() }); await settle();
+    res.tg_people4 = b([A, B, Cp, D].every(p => p.vs.together.people().length === 4)); res.tg_join4Same = same([A, B, Cp, D]);
+    [A, B, Cp, D].forEach(p => { p.vs.set.mode('clay'); p.vs.set.size(1.5); });
+    const fm4 = await together([A, B, Cp, D].map((p, k) => [p, i => [hand('r', new V3(-0.1 + i * 0.008, 1.32 + k * 0.03, -0.5), i < 25)]]), 27);
+    res.tg_four = same([A, B, Cp, D]); res.tg_frameMs4 = st(fm4); res.tg_names = Cp.vs.together.people().map(x => x.name).join(',');
+    /* B leaves: the others carry on, three of them */
+    B.vs.together.stop(); await settle(); res.tg_leave = b([A, Cp, D].every(p => p.vs.together.people().length === 3));
+    /* a headset that drifted (here: a brick wiped by hand) is matched again by the checksum round */
+    const LC = Cp.vs.clay.layerById(L.id); LC.field.bricks.delete([...LC.field.bricks.keys()][0]); res.tg_drifted = b(!same([A, Cp, D]));
+    for (let r = 0; r < 4 && !same([A, Cp, D]); r++) await together([A, Cp, D].map(p => [p, () => []]), 180);
+    res.tg_healed = same([A, Cp, D]);
+    [A, Cp, D].forEach(p => p.vs.together.stop()); await settle(); peers.forEach(p => { cleanup(p.vs); scene.remove(p.world); });
   });
 
   /* ---------- the menu pages, icons and lessons ---------- */

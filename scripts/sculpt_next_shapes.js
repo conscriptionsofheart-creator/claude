@@ -36,9 +36,9 @@ export function makeShapes(THREE, env) {
   function hide() { if (S.preview) S.preview.visible = false; }
   function setKind(kind) { S.kind = PRIMS.includes(kind) ? kind : 'sphere'; if (S.preview) { env.removeHelper(S.preview); S.preview = null; } if (S.live) { const g = S.live.group, body = g.children[0], ed = g.children[1]; body.geometry.dispose(); body.geometry = unitGeometry(S.kind); ed.geometry.dispose(); ed.geometry = new THREE.EdgesGeometry(body.geometry, 30); S.live.kind = S.kind; } }
   function tint() { const op = env.cfg.op; if (S.live) S.live.group.children[0].material.color.setHex(OP_TINT[op] || OP_TINT.add); if (S.preview) S.preview.children[0].material.color.setHex(OP_TINT[op] || OP_TINT.add); }
-  function create(at, r) {
+  function create(at, r, quiet) {
     const g = makeGhost(S.kind, env.cfg.op); g.position.copy(at); g.scale.setScalar(r); env.addHelper(g); S.knobs = knobs(g); S.live = { kind: S.kind, group: g }; placeKnobs();
-    say('A ' + S.kind + ' at your fingertip. Pinch inside it to move it, a knob to stretch a side, both hands to resize and turn. Apply shape puts it in.');
+    if (!quiet) say('A ' + S.kind + ' at your fingertip. Pinch inside it to move it, a knob to stretch a side, both hands to resize and turn. Apply shape puts it in.');
   }
   function drop() { if (!S.live) return; env.removeHelper(S.live.group); S.live = null; S.knobs = []; S.grab = null; S.two = null; }
   /* put the live shape in (or throw it away when ok is false) */
@@ -106,7 +106,11 @@ export function makeShapes(THREE, env) {
     const hq = p.quat || new Q(), H = new M4().compose(p.tip, hq, new V3(1, 1, 1)), rel = new M4().copy(H).invert().multiply(new M4().compose(g.position, g.quaternion, new V3(1, 1, 1)));
     return { kind: 'move', rel };
   }
-  return { frame, applyPending, drop, hide: () => { hide(); }, setKind, get live() { return S.live; }, S };
+    /* sculpting together: a newcomer's snapshot carries a placed shape as its kind and matrix; any grab in progress starts again from the next pinch */
+  function reset() { S.grab = null; S.two = null; S.hands.clear(); }
+  function state() { if (!S.live) return null; const g = S.live.group; g.updateMatrixWorld(true); return { kind: S.live.kind, m: g.matrix.toArray() }; }
+  function setState(st) { drop(); if (!st) return; const k = S.kind; S.kind = st.kind; create(new V3(), 1, true); S.kind = k; const g = S.live.group; g.matrix.fromArray(st.m); g.matrix.decompose(g.position, g.quaternion, g.scale); g.updateMatrixWorld(true); placeKnobs(); }
+  return { frame, applyPending, drop, hide: () => { hide(); }, setKind, reset, state, setState, get live() { return S.live; }, S };
 }
 
 /* ---------- HOLD: move, turn and resize the work with your hands ---------- */
@@ -114,10 +118,17 @@ export function makeHold(THREE, env) {
   const V3 = THREE.Vector3, M4 = THREE.Matrix4, Q = THREE.Quaternion, say = t => { try { env.say && env.say(t); } catch (e) { /* optional */ } };
   let G = null;   /* the grab in progress: { objs: [{ o, m0 (world matrix at the start) }], one: {...} | two: {...} } */
   function targetsOf(hands) {
-    const clay = env.clay, L = clay.active;
+    const clay = env.clay, L = clay.active, tip = hands[0] && hands[0].tip;
+    /* what the hand is on comes first (Ruth's emblem: a rod, a head, the clay beside it): the nearest work, rod, emblem or room object within 25 cm */
+    if (tip) {
+      let best = null, bd = 0.25; const box = new THREE.Box3(), see = (o, what) => { if (!o || !o.parent || !o.visible) return; box.setFromObject(o); if (box.isEmpty()) return; const d = box.distanceToPoint(tip); if (d < bd) { bd = d; best = what; } };
+      clay.works.forEach(w => { if (w.layers.length) see(w.group, { work: w }); }); ((env.assets && env.assets()) || []).forEach(o => see(o, { obj: o })); (env.props() || []).forEach(o => see(o, { obj: o }));
+      if (best && best.obj) return [best.obj];
+      if (best && best.work) { const Lw = L && L.work === best.work ? L : null; if (env.cfg.holdWhat === 'layer' && Lw) return Lw.work.layers.filter(x => x === Lw || (Lw.groupId && x.groupId === Lw.groupId)).map(x => x.group); return [best.work.group]; }
+    }
     if (L && clay.live(L)) { if (env.cfg.holdWhat === 'layer') return L.work.layers.filter(x => x === L || (L.groupId && x.groupId === L.groupId)).map(x => x.group); return [L.work.group]; }
     const w = clay.works.find(x => x.group.parent); if (w) return [w.group];
-    const tip = hands[0].tip; let best = null, bd = 0.25; (env.props() || []).forEach(o => { if (!o || !o.parent) return; const b = new THREE.Box3().setFromObject(o); const d = b.distanceToPoint(tip); if (d < bd) { bd = d; best = o; } });   /* the room's objects as the host lists them (whole objects, not their parts) */
+    let best = null, bd = 0.25; if (!tip) return []; (env.props() || []).forEach(o => { if (!o || !o.parent) return; const b = new THREE.Box3().setFromObject(o); const d = b.distanceToPoint(tip); if (d < bd) { bd = d; best = o; } });   /* the room's objects as the host lists them (whole objects, not their parts) */
     return best ? [best] : [];
   }
   const worldOf = o => { o.updateMatrixWorld(true); return o.matrixWorld.clone(); };
@@ -149,7 +160,7 @@ export function makeHold(THREE, env) {
     frame(hands, dt, cursor);
     if (!anyPinch && startMats.size) {
       const list = [...startMats.entries()].map(([o, m0]) => ({ o, m0, m1: worldOf(o) })); startMats.clear();
-      if (list.some(x => !x.m0.equals(x.m1))) { env.pushUndo({ label: 'hold', undo: () => list.forEach(x => setWorld(x.o, x.m0)), redo: () => list.forEach(x => setWorld(x.o, x.m1)) }); list.forEach(x => env.dirty(x.o)); say('Moved. Undo puts it back.'); }
+      if (list.some(x => !x.m0.equals(x.m1))) { env.pushUndo({ label: 'hold', undo: () => list.forEach(x => setWorld(x.o, x.m0)), redo: () => list.forEach(x => setWorld(x.o, x.m1)), touch: list.map(x => 'O:' + (x.o.name || x.o.id)) }); list.forEach(x => env.dirty(x.o)); say('Moved. Undo puts it back.'); }
     }
   }
   return { frame: frameWithUndo, end: () => { if (startMats.size) frameWithUndo([], 0, { hands: {} }); end(); } };

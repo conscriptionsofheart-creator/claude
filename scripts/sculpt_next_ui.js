@@ -58,6 +58,7 @@ export const ICONS = {
   rodIc: '<path d="M4 19c3-1 4-4 6-7s5-6 10-7"/><path d="M6 21c3-1 4-4 6-7s5-6 10-7" opacity=".6"/><path d="M9 10l2 2M13 7l2 2"/>',
   twistIc: '<path d="M6 4c6 3 6 13 12 16"/><path d="M18 4c-6 3-6 13-12 16"/>',
   taperIc: '<path d="M3 9h10l8 3-8 3H3z"/>',
+  togetherIc: '<circle cx="7" cy="6" r="2.5"/><circle cx="17" cy="6" r="2.5"/><path d="M3 20c0-4 2-7 4-7s3 1 5 3c2-2 3-3 5-3s4 3 4 7"/>',
   sculptNextIc: '<path d="M4 15c0-5 4-9 9-9 4 0 7 3 7 6 0 4-3 6-7 6-3 0-4 1-6 1-2 0-3-2-3-4z"/><path d="M17 3l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
 };
 
@@ -84,6 +85,16 @@ export function makeMenu(vs, env) {
   const c = vs.cfg, cyc = (list, v) => list[(list.indexOf(v) + 1) % list.length], spinTarget = () => { const A = vs.assets(); return A.length ? A[A.length - 1].object : vs.clay.active ? vs.clay.active.work.group : null; };
   const brush = m => ({ label: BRUSH[m][0], ic: BRUSH[m][1], on: () => c.mode === m, act: ui => { vs.set.mode(m); say(BRUSH[m][2]); ui.draw(); } });
   const opTile = () => ({ label: 'Mode: ' + OP_WORD[c.op], ic: OP_IC[c.op], on: () => c.op !== 'add', act: ui => { vs.set.op(cyc(['add', 'subtract', 'paint', 'intersect'], c.op)); say(({ add: 'Add: brushes and shapes build clay up.', subtract: 'Subtract: brushes and shapes take clay away.', paint: 'Paint: brushes and shapes only colour what they touch, in the Colour tile\'s colour.', intersect: 'Intersect: only what a Clay stroke, Dots or a shape covers is kept.' })[c.op]); ui.draw(); } });
+  /* Sculpt together: one tap joins the room (the first one in starts it). Your own clay is replaced by the shared work when you join someone, so with clay here the first tap only says so. */
+  let joinAsk = 0;
+  const togetherTile = () => {
+    const T = vs.together; if (!T) return null; const n = T.on ? T.people().length : 0;
+    return { label: T.on ? (T.state === 'joining' || T.state === 'connecting' ? 'Together: joining…' : 'Together: ' + (n <= 1 ? 'waiting' : n + ' people')) : 'Sculpt together', ic: 'togetherIc', on: () => T.on, act: ui => {
+      if (T.on) { T.stop(); ui.draw(); return; }
+      const mine = vs.clay.works.some(w => w.group.parent && w.layers.length) || vs.assets().length;
+      if (mine && Date.now() - joinAsk > 8000) { joinAsk = Date.now(); say('If someone is already sculpting, joining shows their work in place of yours. Save clay first to keep yours, then tap Sculpt together again.'); return; }
+      joinAsk = 0; T.start(); ui.draw(); } };
+  };
   const pages = {
     10: { title: 'CLAY', rows: ui => [
       brush('clay'), brush('smooth'), brush('flatten'), brush('pinch'), brush('inflate'), brush('grab'), brush('scrape'), brush('smear'), brush('dots'),
@@ -104,6 +115,7 @@ export function makeMenu(vs, env) {
         { label: 'Rod end: ' + (c.rodEnd === 'taper' ? 'tapered' : 'blunt'), ic: 'taperIc', act: () => { vs.set.rodEnd(c.rodEnd === 'taper' ? 'blunt' : 'taper'); say(c.rodEnd === 'taper' ? 'The rod\'s end is drawn out and tapered to a point.' : 'The rod keeps its full size to a flat end.'); ui.draw(); } }] : []),
       { label: 'Make the emblem', ic: 'emblemIc', act: () => { vs.makeEmblem(); ui.draw(); } },
       { label: 'Spin: ' + (spinTarget() && vs.motion.spinning(spinTarget()) ? 'on' : 'off'), ic: 'spinIc', on: () => !!(spinTarget() && vs.motion.spinning(spinTarget())), act: () => { const L = vs.clay.active, A = vs.assets(), g = A.length ? A[A.length - 1].object : L ? L.work.group : null; if (!g) { say('Make some clay, a rod or the emblem first; Spin turns it slowly round.'); return; } const on = vs.motion.spinning(g); vs.spin(g, on ? 0 : 10); say(on ? 'Spin off: it eases to a stop.' : 'Spin on: one slow turn every 10 seconds. Save clay keeps the spin as an animation.'); ui.draw(); } },
+      togetherTile(),
       vs.assetBench ? { label: 'Back to the figure', ic: 'backFigureIc', act: () => { vs.endAsset(); ui.draw(); } } : { label: 'New asset', ic: 'assetIc', act: () => { vs.newAsset(); ui.draw(); } },
       { label: 'Shapes ▸', ic: 'shapesIc', act: () => ui.page(11) }, { label: 'Layers ▸', ic: 'layersIc', act: () => ui.page(12) }, { label: 'Expressions ▸', ic: 'motionIc', act: () => ui.page(13) },
       { label: 'Back to brushes', ic: 'undo', act: () => ui.page(0) },
@@ -160,7 +172,9 @@ export function makeMenu(vs, env) {
     } },
   };
   /* menu(pg, ui) -> rows for the page; ui = { draw(), page(n), say(t) } from the host. Each row's act gets ui, so the rows stay free of page globals. */
-  function menu(pg, ui) { const p = pages[pg]; if (!p) return null; return p.rows(ui).map(r => Object.assign({}, r, { act: () => { try { r.act(ui); } catch (e) { say('Error: ' + (e && e.message || e)); } } })); }
+  let lastUi = null;
+  function menu(pg, ui) { const p = pages[pg]; if (!p) return null; lastUi = ui; return p.rows(ui).filter(Boolean).map(r => Object.assign({}, r, { act: () => { try { r.act(ui); } catch (e) { say('Error: ' + (e && e.message || e)); } } })); }
+  menu.redraw = () => { try { if (lastUi) lastUi.draw(); } catch (e) { /* the page's */ } };   /* sculpting together: a tap's result arrives a moment later, then the menu shows it */
   menu.title = pg => (pages[pg] ? pages[pg].title : null);
   menu.pages = Object.keys(pages).map(Number);
   /* the tile that opens the clay pages from the first Sculpt page */
@@ -221,6 +235,7 @@ export const LESSONS = [
   L1('twist', 'Twist', 'Twist: 180°', 'twistIc', 'With Rod picked, tap Twist to choose how far the next rod turns from one end to the other: 0, 90, 180, 360 or 540 degrees.'),
   L1('rodend', 'Rod end', 'Rod end: tapered', 'taperIc', 'With Rod picked, tap Rod end: tapered draws the end out to a point, blunt keeps it full size.'),
   L1('spin', 'Spin', 'Spin: off', 'spinIc', 'Pick some clay, then tap Spin: the whole work turns slowly round, one turn every 10 seconds. Tap again and it eases to a stop. Save clay keeps the spin.'),
+  L1('together', 'Sculpt together', 'Sculpt together', 'togetherIc', 'Tap Sculpt together; when your collaborator taps it too, you see their hands as coloured balls with their name, and everything either of you makes appears for both. Undo takes back only your own steps.'),
   L1('saw', 'Saw on clay', 'Saw', 'cutIc', 'Pick Saw on the first Sculpt page and sweep it through clay with the trigger held: a slit as wide as the Size ring is cut, the rest stays. It saws figures and objects as before.'),
   L1('carveclay', 'Carve and stamp on clay', 'Carve', 'carveIc', 'Carve and Stamp work on clay too: sweep Carve to dig a groove, or press a picked object in with Stamp to carve its shape out of the clay.'),
 ];
@@ -236,7 +251,8 @@ export const TILES = [
   { page: 'CLAY', label: 'Steady: off / some / lots', ic: 'steadyIc' }, { page: 'CLAY', label: 'Edge: smooth / linear / sharp / flat', ic: 'falloffIc' },
   { page: 'CLAY', label: 'Clay: round / ribbon (when Clay is picked)', ic: 'clayIc' }, { page: 'CLAY', label: 'Dots: balls / rings / cubes / spikes (when Dots is picked)', ic: 'dotsIc' },
   { page: 'CLAY', label: 'Finish: matte / satin / gloss / metal / glow', ic: 'finishIc' }, { page: 'CLAY', label: 'Other hand smooths: on / off', ic: 'supportIc' },
-  { page: 'CLAY', label: 'New asset / Back to the figure', ic: 'assetIc / backFigureIc' }, { page: 'CLAY', label: 'Expressions ▸', ic: 'motionIc' },
+  { page: 'CLAY', label: 'New asset / Back to the figure', ic: 'assetIc / backFigureIc' }, { page: 'CLAY', label: 'Sculpt together / Together: N people', ic: 'togetherIc' },
+  { page: 'CLAY', label: 'Rod, Twist: N°, Rod end: tapered / blunt', ic: 'rodIc, twistIc, taperIc' }, { page: 'CLAY', label: 'Make the emblem', ic: 'emblemIc' }, { page: 'CLAY', label: 'Spin: on / off', ic: 'spinIc' }, { page: 'CLAY', label: 'Expressions ▸', ic: 'motionIc' },
   { page: 'EXPRESSIONS', label: '▶ <shape key> (one tile per key, tap to play it)', ic: 'pulseIc' }, { page: 'EXPRESSIONS', label: 'Pulse: quick / normal / slow', ic: 'pulseSpeedIc' }, { page: 'EXPRESSIONS', label: 'Plays: once / 3 times', ic: 'repeatIc' },
   { page: 'EXPRESSIONS', label: 'Record face / Stop recording', ic: 'recordFaceIc' }, { page: 'EXPRESSIONS', label: 'Play the move', ic: 'playMoveIc' },
   { page: 'CLAY', label: 'Undo stroke / Redo stroke', ic: 'undoStroke / redoStroke' }, { page: 'CLAY', label: 'Shapes ▸', ic: 'shapesIc' }, { page: 'CLAY', label: 'Layers ▸', ic: 'layersIc' },

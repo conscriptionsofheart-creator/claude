@@ -35,7 +35,7 @@ export function makeFigureBrushes(THREE, core, env) {
   function densify(mesh) {   /* a cube or other coarse object gets points added (in the world's measure) the first time a brush reaches it; a figure's own pieces never */
     if (isFigurePiece(mesh) || skinned(mesh)) return; if (mesh.userData && mesh.userData._bstDense === mesh.geometry.id) return; mesh.userData = mesh.userData || {}; mesh.userData._bstDense = mesh.geometry.id;
     const sc = new V3(); mesh.matrixWorld.decompose(new V3(), new THREE.Quaternion(), sc); const r = subdivideGeometry(THREE, mesh.geometry, { scale: { x: Math.abs(sc.x), y: Math.abs(sc.y), z: Math.abs(sc.z) }, maxEdge: 0.04, maxPoints: 60000 }); if (!r) return;
-    mesh.geometry = r.geometry; mesh.userData._bstDense = r.geometry.id; if (mesh.updateMorphTargets) mesh.updateMorphTargets();
+    mesh.geometry = r.geometry; mesh.userData._bstDense = r.geometry.id; env.touched && env.touched(mesh); if (mesh.updateMorphTargets) mesh.updateMorphTargets();
     say((mesh.name ? '"' + mesh.name + '"' : 'This object') + ' had too few points to shape, so points were added (' + r.geometry.attributes.position.count.toLocaleString('en-US') + ' now).');
   }
   function entryOf(mesh) {
@@ -65,7 +65,7 @@ export function makeFigureBrushes(THREE, core, env) {
     for (const m of env.targets()) {
       if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); m.updateMatrixWorld();
       box.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); if (box.distanceToPoint(tip) > reach + (skinned(m) ? 0.6 : 0)) continue;
-      if (!hasEntry(m)) { const n = m.geometry.attributes.position.count; if (n > 250000) continue; if (built > 0 && built + n > 30000) { waiting = true; continue; } built += n; }
+      if (!hasEntry(m)) { const n = m.geometry.attributes.position.count; if (n > 250000) continue; if (built > 0 && built + n > 30000 && !(env.noBudget && env.noBudget())) { waiting = true; continue; }   /* together: no per-frame budget, so every headset picks from the same pieces */ built += n; }
       out.push(m);
     }
     return out;
@@ -105,7 +105,7 @@ export function makeFigureBrushes(THREE, core, env) {
   function symFor(mesh, c, cfg) { return cfg.sym === 'radial' || cfg.sym === 'both' ? { radial: { count: cfg.count, ...K.limbAxis(mesh, c) } } : null; }
   function opts(s, cfg, extra) { return { mode: s.mode, radius: radiusOf(s.mesh, cfg.size), strength: cfg.strength / 100 * GAIN * (s.mode === 'smear' || s.mode === 'smooth' ? 2.5 : 1), sign: cfg.op === 'subtract' ? -1 : 1, falloff: cfg.falloff, down: new V3(0, -1, 0).transformDirection(new M4().copy(s.mesh.matrixWorld).invert()), dot: cfg.dot, ...extra }; }
   function begin(hand, hit, cfg) {
-    const mesh = hit.mesh, en = hit.en; if (env.strokeStart) env.strokeStart();
+    const mesh = hit.mesh, en = hit.en; if (env.strokeStart) env.strokeStart(); if (env.touched) env.touched(mesh);
     const mode = cfg.op === 'paint' ? 'paint' : cfg.mode === 'clay' ? 'clay' : cfg.mode;
     const s = { hand: hand.id, mesh, en, mode, parts: new Map(), lastC: null, hold: 0, prevTip: hand.tip.clone(), recC: mode === 'paint' ? new Map() : null };
     if (mode === 'paint') s.colorAttr = ensureColors(mesh);
@@ -148,14 +148,14 @@ export function makeFigureBrushes(THREE, core, env) {
     hs.delete(s.hand); const mesh = s.mesh, en = s.en, st = en.st;
     if (s.mode === 'paint') {
       if (!s.recC.size) return false; let rec = s.recC; const ca = s.colorAttr, flip = () => { rec = core.swap(st, rec, null, ca); freshGeometry(mesh); };
-      freshGeometry(mesh); env.pushUndo({ label: 'paint', undo: flip, redo: flip }); env.dirty(mesh); say('Painted ' + s.recC.size.toLocaleString('en-US') + ' points.'); return true;
+      freshGeometry(mesh); env.pushUndo({ label: 'paint', undo: flip, redo: flip, touch: ['M:' + mesh.name] }); env.dirty(mesh); say('Painted ' + s.recC.size.toLocaleString('en-US') + ' points.'); return true;
     }
     const parts = [...s.parts.values()]; parts.forEach(p => { if (s.grabs) s.grabs.forEach(x => { if (x.name === p.name) p.rec = mergeRec(p.rec, x.g.rec); }); });
     const live = parts.filter(p => p.rec.size); if (!live.length) return false;
     core.finish(st, { target: {} }); const changed = new Set(); live.forEach(p => p.rec.forEach((_, m) => changed.add(m)));
     const recs = live.map(p => ({ p, m: p.rec })), flip = () => { recs.forEach(r => { r.m = core.swap(st, r.m, r.p.T); mesh.geometry.morphAttributes.position[r.p.k].needsUpdate = true; }); refresh(en, [...changed]); freshGeometry(mesh); mirrorToShells(mesh); env.afterEdit && env.afterEdit(mesh); };
     refresh(en, [...changed]); freshGeometry(mesh);
-    env.pushUndo({ label: s.mode, undo: flip, redo: flip, keys: live.map(p => p.name) }); env.dirty(mesh); env.afterEdit && env.afterEdit(mesh);
+    env.pushUndo({ label: s.mode, undo: flip, redo: flip, keys: live.map(p => p.name), touch: ['M:' + mesh.name] }); env.dirty(mesh); env.afterEdit && env.afterEdit(mesh);
     const nm = ({ deflate: 'Indent', dots: 'Dots', pinch: 'Pinch' })[s.mode] || s.mode[0].toUpperCase() + s.mode.slice(1);
     say(`${nm}: ${changed.size.toLocaleString('en-US')} points in ${live.map(p => '"' + p.name + '"').join(' and ')}.`); return true;
   }
