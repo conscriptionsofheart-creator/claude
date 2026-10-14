@@ -7,6 +7,14 @@ from urllib.parse import urlparse, parse_qs
 
 MAX = 64 * 1024 * 1024
 rooms = {}
+ARGS = sys.argv[1:]
+KEY = (ARGS[ARGS.index('--key') + 1] if '--key' in ARGS and ARGS.index('--key') + 1 < len(ARGS) else os.environ.get('SCULPT_KEY', ''))
+PUBLIC = '--public' in ARGS
+
+
+def lan(addr):
+    a = str(addr or '').replace('::ffff:', '')
+    return a == '::1' or a.startswith(('127.', '10.', '192.168.')) or any(a.startswith('172.%d.' % i) for i in range(16, 32)) or a.lower().startswith(('fc', 'fd', 'fe80'))
 
 
 def frame(text):
@@ -34,7 +42,10 @@ async def handle(reader, writer):
         writer.write(('HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s' % (len(txt), txt)).encode()); await writer.drain(); writer.close(); return
     accept = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
     writer.write(('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n' % accept).encode())
-    name = (parse_qs(urlparse(path).query).get('room') or ['atelier'])[0][:64]
+    q = parse_qs(urlparse(path).query); peer_ip = (writer.get_extra_info('peername') or ('',))[0]
+    if (not PUBLIC and not lan(peer_ip)) or (KEY and (q.get('key') or [''])[0] != KEY):
+        log('refused', peer_ip); writer.write(b'HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); await writer.drain(); writer.close(); return
+    name = (q.get('room') or ['atelier'])[0][:64]
     room = rooms.setdefault(name, {'n': 0, 'id': 0, 'peers': {}})
     room['id'] += 1; pid = 'p%d' % room['id']; others = list(room['peers'].keys()); room['peers'][pid] = writer
     log('room', name, '+', pid, '(%d)' % len(room['peers']))
@@ -87,9 +98,10 @@ async def handle(reader, writer):
 
 
 async def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get('PORT', 8787))
+    port = int(ARGS[0]) if ARGS and not ARGS[0].startswith('--') else int(os.environ.get('PORT', 8787))
     srv = await asyncio.start_server(handle, '0.0.0.0', port)
-    log('Sculpt together relay on ws://0.0.0.0:%d/?room=atelier' % port)
+    log('Sculpt together relay on ws://0.0.0.0:%d/?room=atelier%s' % (port, '&key=...' if KEY else ''))
+    if not KEY: log('No room key: anyone on this network who knows the address can join. Start with --key <words> to make the room private.')
     async with srv: await srv.serve_forever()
 
 if __name__ == '__main__':

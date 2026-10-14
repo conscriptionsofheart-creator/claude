@@ -5,7 +5,11 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 
-const port = +(process.argv[2] || process.env.PORT || 8787), rooms = new Map(), MAX = 64 * 1024 * 1024;
+const arg = k => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
+const port = +(process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : process.env.PORT || 8787), rooms = new Map(), MAX = 64 * 1024 * 1024;
+/* private by default (Ruth's rule: LAN only, with the key): only headsets on this network may join, and with a room key set (--key or SCULPT_KEY) only those that bring it */
+const KEY = arg('--key') || process.env.SCULPT_KEY || '', PUBLIC = process.argv.includes('--public');
+const lan = a => { a = String(a || '').replace(/^::ffff:/, ''); return a === '::1' || /^127\./.test(a) || /^10\./.test(a) || /^192\.168\./.test(a) || /^172\.(1[6-9]|2\d|3[01])\./.test(a) || /^(fc|fd|fe80)/i.test(a); };
 const log = (...a) => { if (!process.env.QUIET) console.log(new Date().toISOString().slice(11, 19), ...a); };
 
 function frame(text) {   /* one unmasked text frame (server to client) */
@@ -56,8 +60,11 @@ function peer(sock, roomName) {
 const server = http.createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('Sculpt together relay. Rooms: ' + ([...rooms].map(([k, r]) => k + ' (' + r.peers.size + ')').join(', ') || 'none') + '\n'); });
 server.on('upgrade', (req, sock) => {
   const key = req.headers['sec-websocket-key']; if (!key || String(req.headers.upgrade || '').toLowerCase() !== 'websocket') { sock.destroy(); return; }
+  const q = new URL(req.url, 'http://x').searchParams, refuse = why => { log('refused', sock.remoteAddress, why); try { sock.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); } catch (e) { /* gone */ } };
+  if (!PUBLIC && !lan(sock.remoteAddress)) { refuse('not on this network'); return; }
+  if (KEY && q.get('key') !== KEY) { refuse('wrong or missing room key'); return; }
   const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n'); sock.setNoDelay(true);
   const room = (new URL(req.url, 'http://x').searchParams.get('room') || 'atelier').slice(0, 64); peer(sock, room);
 });
-server.listen(port, () => log('Sculpt together relay on ws://0.0.0.0:' + port + '/?room=atelier'));
+server.listen(port, () => { log('Sculpt together relay on ws://0.0.0.0:' + port + '/?room=atelier' + (KEY ? '&key=…' : '')); if (!KEY) log('No room key: anyone on this network who knows the address can join. Start with --key <words> to make the room private.'); if (PUBLIC) log('--public: headsets from outside this network are allowed too.'); });

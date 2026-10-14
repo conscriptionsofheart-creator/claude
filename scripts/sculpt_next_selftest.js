@@ -412,12 +412,44 @@ export async function runNextTests(T, ctx) {
     res.ct_mapLines = vs.controlMap.length; cleanup(vs);
   });
 
+  /* ---------- from the Quest collaborative-creation report (Ruth 2026-10-14): Draw strokes, Keep work, your stroke at once, who made what, dropping out and rejoining ---------- */
+  await section('report', async () => {
+    const tick = () => new Promise(r => setTimeout(r, 0));
+    { const vs = fresh(); vs.set.mode('rod'); vs.set.size(1.5); vs.set.rodEnd('blunt'); vs.set.rodTwist(0); const dims = {};
+      for (const pf of ['tube', 'ribbon', 'ink']) { vs.set.rodProfile(pf); vs.set.mode('rod'); const z = -0.5 - Object.keys(dims).length * 0.1; run(vs, line(new V3(-0.15, 1.3, z), new V3(0.15, 1.3, z), 30)); const a = vs.assets().pop(), g = a.object.geometry; g.computeBoundingBox(); const sz = g.boundingBox.getSize(new V3()); dims[pf] = { name: a.name, y: r2(sz.y * 1000), z: r2(sz.z * 1000) }; }
+      res.rp_draw = Object.entries(dims).map(([k, v]) => v.name + ' ' + v.y + 'x' + v.z + 'mm').join(', ');
+      res.rp_tubeRound = b(Math.abs(dims.tube.y - dims.tube.z) < 2 && dims.tube.y > 25); res.rp_ribbonFlat = b(Math.min(dims.ribbon.y, dims.ribbon.z) < 4 && Math.max(dims.ribbon.y, dims.ribbon.z) > 25); res.rp_inkFine = b(Math.max(dims.ink.y, dims.ink.z) < 10);
+      /* keep work: clay and rods kept, everything taken away, opened again identical */
+      vs.set.mode('clay'); vs.set.size(2); run(vs, line(new V3(-0.1, 1.15, -0.5), new V3(0.1, 1.15, -0.5), 16)); vs.flush(); const parts0 = vs.together.checksum(true), nA = vs.assets().length;
+      vs.keepWork('Test work'); for (let i = 0; i < 200 && !(vs.keptWorks().some(k => k.name === 'Test work')); i++) { vs.flush(); await new Promise(r => setTimeout(r, 20)); }
+      const list = vs.keptWorks(); res.rp_kept = b(list.some(k => k.name === 'Test work')); res.rp_keptKB = list[0] ? Math.round(list[0].bytes / 1024) : -1;
+      while (vs.canUndo()) vs.undo(); vs.flush(); res.rp_emptied = b(!vs.assets().length && !vs.clay.works.some(w => w.group.parent && w.layers.length));
+      vs.openWork(list[0].id); for (let i = 0; i < 200 && vs.assets().length < nA; i++) { vs.flush(); await new Promise(r => setTimeout(r, 20)); } vs.flush();
+      const parts1 = vs.together.checksum(true); res.rp_reopened = b(vs.assets().length === nA && parts1.clay === parts0.clay && parts1.assets === parts0.assets); res.rp_reopenClay = b(vs.clay.works.some(w => w.group.parent && w.layers.length));
+      vs.forgetWork(list[0].id); cleanup(vs); vs.assets().forEach(a => a.object.parent && a.object.parent.remove(a.object)); }
+    /* together over a relay with 60 ms each way: your stroke shows at once as a line, then the real rod; whose rod it is travels with it; Sam drops out mid-stroke and comes back */
+    { const { makeLocalRelay } = await import('/pe_lib/sculpt_next_collab.js'), relay = makeLocalRelay({ delay: 60 }), worlds = [];
+      const mk = name => { const world = new T.Group(); scene.add(world); worlds.push(world); const vs = ctx.createVrSculpt(T, null, mkHost({ say: () => {}, addObject: o => { if (!o.parent) world.add(o); } })); vs.enter(null); vs.set.stabilize(0); return vs; };
+      const A = mk('Ruth'), B = mk('Sam'), both = [A, B], settle = async () => { for (let k = 0; k < 3000; k++) { await new Promise(r => setTimeout(r, 5)); both.forEach(v => { if (v.together.on) v.flush(); }); if (relay.idle() && both.every(v => !v.together.on || v.together.waiting === 0)) { await new Promise(r => setTimeout(r, 70)); if (relay.idle()) return; } } };
+      A.together.start({ transport: relay.connect(), name: 'Ruth' }); await settle(); B.together.start({ transport: relay.connect(), name: 'Sam' }); await settle();
+      A.set.mode('rod'); A.set.size(1.5); await settle(); let seenAtOnce = 0; for (let i = 0; i < 6; i++) { A.frame([hand('r', new V3(-0.1 + i * 0.02, 1.3, -0.5), true)], 0.016); if (i >= 1) seenAtOnce = Math.max(seenAtOnce, A.together.previewPoints()); }
+      res.rp_previewAtOnce = b(seenAtOnce >= 2 && !A.assets().length); for (let i = 6; i < 24; i++) { A.frame([hand('r', new V3(-0.1 + i * 0.02, 1.3, -0.5), i < 22)], 0.016); await tick(); } await settle(); A.frame([], 0.016);
+      res.rp_previewClears = b(A.together.previewPoints() === 0 && A.assets().length === 1); const ra = A.assets()[0], rb = B.assets()[0]; res.rp_author = b(ra && rb && ra.object.userData.author === 'Ruth' && rb.object.userData.author === 'Ruth');
+      if (ra) { const ex = await A.exportGlb([ra.object], {}), gl = await new Promise((ok, no) => new ctx.Loader().parse(ex.buffer, '', ok, no)); let au = null; gl.scene.traverse(o => { if (o.userData && o.userData.author) au = o.userData.author; }); res.rp_authorInGlb = b(au === 'Ruth'); }
+      /* Sam drops out in the middle of a clay stroke, then joins again */
+      B.set.mode('clay'); B.set.size(2); await settle(); for (let i = 0; i < 10; i++) { B.frame([hand('r', new V3(-0.05 + i * 0.01, 1.15, -0.5), true)], 0.016); A.frame([], 0.016); await tick(); }
+      B.together.stop(); await settle(); for (let i = 0; i < 4; i++) { A.frame([], 0.016); await tick(); } await settle(); const keptOnA = A.clay.works.some(w => w.group.parent && w.layers.length);
+      B.together.start({ transport: relay.connect(), name: 'Sam' }); await settle(); for (let i = 0; i < 4; i++) { A.frame([], 0.016); B.frame([], 0.016); await tick(); } await settle();
+      res.rp_rejoin = b(keptOnA && B.together.state === 'synced' && A.together.people().length === 2 && A.together.checksum() === B.together.checksum());
+      both.forEach(v => v.together.stop()); await settle(); both.forEach(v => cleanup(v)); worlds.forEach(w => scene.remove(w)); }
+  });
+
   /* ---------- the menu pages, icons and lessons ---------- */
   await section('menu', async () => {
     const vs = fresh(), host = ['inflateIc', 'smoothIc', 'grabIc', 'brushSize', 'strengthBars', 'symOff', 'symMirror', 'symRound', 'undoStroke', 'redoStroke', 'undo', 'floppy', 'eye', 'lock', 'cutIc', 'carveIc'], has = ic => ic in vs.icons || host.includes(ic);
     let rows = 0, bad = []; const ui = { draw() {}, page() {}, say() {} };
-    [10, 11, 12, 13].forEach(pg => vs.menu(pg, ui).forEach(r => { rows++; if (!r.label || !has(r.ic)) bad.push(r.label + ':' + r.ic); }));
-    res.u_rows = rows; res.u_iconsOk = b(!bad.length); if (bad.length) res.u_badIcons = bad.join(' | '); res.u_titles = [10, 11, 12, 13].map(p => vs.menuTitle(p)).join(',');
+    vs.menu.pages.forEach(pg => vs.menu(pg, ui).forEach(r => { rows++; if (!r.label || !has(r.ic)) bad.push(r.label + ':' + r.ic); }));
+    res.u_rows = rows; res.u_iconsOk = b(!bad.length); if (bad.length) res.u_badIcons = bad.join(' | '); res.u_titles = vs.menu.order.map(p => vs.menuTitle(p)).join(',');
     res.u_lessons = vs.lessons.length; res.u_lessonsOneStep = b(vs.lessons.every(l => l.steps.length === 1 && l.steps[0].text && has(l.steps[0].tile.ic)));
     let ran = 0; try { vs.menu(10, ui).filter(r => /^(Mode|Colour|Size|Strength|Symmetry|Steady|Edge)/.test(r.label)).forEach(r => { r.act(); ran++; }); vs.menu(11, ui).filter(r => /^(Shape:|Blend|Hold:|Clay on)/.test(r.label)).forEach(r => { r.act(); ran++; }); } catch (e) { res.u_actError = String(e.message); }
     res.u_actsRun = ran; res.u_tiles = vs.tiles.length; res.u_svgParse = b(Object.values(vs.icons).every(s => { try { return new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg">' + s + '</svg>', 'image/svg+xml').getElementsByTagName('parsererror').length === 0; } catch (e) { return false; } }));

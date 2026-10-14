@@ -68,9 +68,22 @@ The same busy-room run on the **current** engine: 560 ms at 1× (about 9× more)
 - **Your emblem:** **Make the emblem** brings the two-figure emblem (two rods twisted, bent, stretched and tapered, two heads, in its own gradients) beside you, turning slowly.
 - **Sculpt together (2 tested; built and tested for 4):** one tap joins the room. Everyone's hands and taps go through the relay in one order, so every headset builds the same work; each person has their own tools, settings, picked layer, shape and undo. You see the others as **people**: an avatar under their head, arms reaching to their real hands, legs on the floor, in the **look and gradient they chose** (My avatar, My avatar colours), with their name; a MakeHuman export (or a Mixamo / Blender-named rig) is used as their avatar when the page can load it (bones found by name, only head and arms moved). Joining late: everyone's strokes end, the first person sends the work, undo starts fresh. A drifted headset is matched again by itself.
 
+### From the Quest collaborative-creation report (`research/Quest_Collaborative_Creation_Engineering_Reference_2026.pdf`)
+
+The report (Substance 3D Modeler, Gravity Sketch, Horizon Worlds, Multibrush) agrees with how this is built: clay edits go through one ordered stream (its "globally ordered operation list for overlapping regions"), undo is per person ("never revert unrelated edits from other users"), four editors, heavy work sliced across frames and meshed in a worker, a support hand and a tool hand. Taken from it now:
+- **Private rooms:** the relays let in only headsets on the home network, and with a room key (`--key <words>`) only those who bring it (`localStorage.sculptTogetherKey` or `host.collabKey()` on each headset). Ruth's rule: LAN only, with the key.
+- **Your stroke at once:** while a frame travels to the relay and back, a light line follows your fingertip; the real clay or rod replaces it as it comes back (the report's "first plausible preview in the same frame").
+- **Keep work:** Layers > Keep work keeps the clay, rods, balls and emblem on this headset, still editable; Open kept work brings it back as clay (the report: "glTF is not sufficient to preserve editable clay").
+- **Draw strokes** (Multibrush / Gravity Sketch): Stroke: rod, tube, ribbon or ink, in the current gradient, see-through included.
+- **Fewer tiles at a time** (its five-tab layout): CLAY (brushes and their settings), SHAPES (shapes, ball, join, emblem, spin, Hold), DRAW, COLOUR (wheel, gradients, skins, looks), LAYERS (with Keep work), TOGETHER (sculpt together, your avatar, controls), EXPRESSIONS. The Palette's pages turn in that order with the tool stick.
+- **Who made it:** rods, balls, the emblem and joined pieces carry their maker's name (`userData.author`, saved in the .glb as extras).
+- **Dropping out and coming back** mid-stroke: tested; the stroke so far stays, the rejoining headset gets the work again.
+
+Not taken yet (each a system of its own): Gravity Sketch's editable surfaces and SubD cages, Horizon's world objects with behaviours, voice, viewer-only visitors.
+
 ### How to sculpt together
 
-1. On a computer on the same network as the headsets, start a relay: `node tools/sculpt_next_relay.mjs` or `python3 tools/sculpt_next_relay.py` (nothing to install; port 8787; any number of rooms).
+1. On a computer on the same network as the headsets, start a relay: `node tools/sculpt_next_relay.mjs --key "your words"` or `python3 tools/sculpt_next_relay.py --key "your words"` (nothing to install; port 8787; any number of rooms; only headsets on this network get in, and only with the key). On each headset, put the same words in `localStorage.sculptTogetherKey` once.
 2. Each headset finds it at `ws://<the page's host>:8787/?room=atelier` by default; set another address with `localStorage.sculptTogetherUrl` or the page's `host.collabUrl()`. A page served over **https** needs **wss://** (put the relay behind the same TLS proxy as the page).
 3. In the headset: Clay & shapes ▸ **Sculpt together**. With clay of your own in the room the first tap only warns (joining someone shows their work instead); tap again. **My avatar** and **My avatar colours** set how you look to the others.
 
@@ -123,6 +136,7 @@ New (all in `scripts/`, flat, go to `lib/`):
 | `sculpt_next_looks.js` | gradients (library and your own), skins (patterns), looks (materials) |
 | `sculpt_next_collab.js` | sculpting together: the shared order, joining, checksums, WebSocket and in-page transports, snapshot encoders |
 | `sculpt_next_controls.js` | Substance 3D Modeler's controller layout inside Sculpt (tool hand / support hand), tooltips on touch, colour pick, Quicktune |
+| `sculpt_next_store.js` | Keep work: editable clay, rods and balls kept in the headset browser's own database |
 | `sculpt_next_avatar.js` | the people you sculpt with: built-in figure and rigged figures (MakeHuman, Mixamo, Blender names) posed to head and hands |
 | `sculpt_next_ui.js` | wrist-menu pages, picture-tile icons, lessons, tile list |
 | `sculpt_next_testkit.js` | a built skinned figure, and a stand-in with MakeHuman's bone names, for the self-test |
@@ -144,7 +158,7 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 
 ## Tests (no headset)
 
-`bst_vr_sculpt_selftest.html?three=128|186&engine=next` (append `&only=clay,brushes,shapes,cutter,layers,hold,figure,export,worker,timing,flow,emblem,rod,looks,together,avatars,controls,menu` for parts). Every existing check of the current engine passes on the next engine (r128 and r186), then about 300 more (361 values in all on each revision): clay watertight with exact undo / redo, mirror / 360 / both, each brush's effect with exact undo (12/12), shapes and gizmo, booleans, saw (one undo per sweep), plane cut, carve, erase, stamp into clay, clay as a stamp into an object, mixed undo with the current engine's saw, every layer operation, Hold, the stabiliser, the support-hand smooth, the palm-up swap, haptic ticks, the asset bench, expression pulses, a recorded expression saved and reloaded from the .glb, the emblem (parts, colours, depth, spin, Spin clip in the .glb, brushable, undo, built in slices), the rod (follows the path, undo / redo), **the colour wheel** (hue, strength, light, see-through, building a gradient with + and −, sculpting beside it, closing), see-through rods, the Gradient tool along a line and its undo, a marble skin, a gradient on clay, looks on rods and clay (chrome, glass with see-through, pearl), people left alone, a dressed rod saved with its metal, **sculpting together** (alone, a late join with the same work, both on the same clay at once, a shape from one person's menu, undo refused and then allowed, the emblem and its spin the same on both, a figure key, the emblem built **by hand** by two people at once and joined, spun and saved, dressing it together, four people, someone leaving, a drifted headset repaired), **avatars** (two people sculpting, each seen by the other in their own look and gradient; one as a rigged MakeHuman-named figure with head and wrist exactly on the person's, one built-in; a look change seen live; leaving removes it), **Substance controls** (undo and redo on the support stick, size and edge on the tool stick, the partner swap, Gizmo / Free, the Palette held and pinned, its pages, freeze, colour pick taking the clay's exact colour without sculpting, select, Quicktune, scope in and out, tooltips, the Atelier layout switching it all off), the menu (every icon resolves, every SVG parses, every lesson one step). **Figures:** after every brush, the saw and a shape cut, the skin indices, skin weights, rest shape, an existing key ("Smile"), the bones, bone inverses and bind matrix are byte-identical; the .glb reloads with 11/11 bones, its weights and all keys.
+`bst_vr_sculpt_selftest.html?three=128|186&engine=next` (append `&only=clay,brushes,shapes,cutter,layers,hold,figure,export,worker,timing,flow,emblem,rod,looks,together,avatars,controls,report,menu` for parts). Every existing check of the current engine passes on the next engine (r128 and r186), then about 300 more (375 values in all on each revision): clay watertight with exact undo / redo, mirror / 360 / both, each brush's effect with exact undo (12/12), shapes and gizmo, booleans, saw (one undo per sweep), plane cut, carve, erase, stamp into clay, clay as a stamp into an object, mixed undo with the current engine's saw, every layer operation, Hold, the stabiliser, the support-hand smooth, the palm-up swap, haptic ticks, the asset bench, expression pulses, a recorded expression saved and reloaded from the .glb, the emblem (parts, colours, depth, spin, Spin clip in the .glb, brushable, undo, built in slices), the rod (follows the path, undo / redo), **the colour wheel** (hue, strength, light, see-through, building a gradient with + and −, sculpting beside it, closing), see-through rods, the Gradient tool along a line and its undo, a marble skin, a gradient on clay, looks on rods and clay (chrome, glass with see-through, pearl), people left alone, a dressed rod saved with its metal, **sculpting together** (alone, a late join with the same work, both on the same clay at once, a shape from one person's menu, undo refused and then allowed, the emblem and its spin the same on both, a figure key, the emblem built **by hand** by two people at once and joined, spun and saved, dressing it together, four people, someone leaving, a drifted headset repaired), **avatars** (two people sculpting, each seen by the other in their own look and gradient; one as a rigged MakeHuman-named figure with head and wrist exactly on the person's, one built-in; a look change seen live; leaving removes it), **Substance controls** (undo and redo on the support stick, size and edge on the tool stick, the partner swap, Gizmo / Free, the Palette held and pinned, its pages, freeze, colour pick taking the clay's exact colour without sculpting, select, Quicktune, scope in and out, tooltips, the Atelier layout switching it all off), **from the report** (tube round, ribbon flat, ink fine; work kept, emptied and opened again identical; your stroke shown at once over a 60 ms relay and cleared when the rod comes back; the maker's name on both headsets and in the .glb; dropping out mid-stroke and rejoining with the same work; relays refusing no key and a wrong key, letting the right one in), the menu (every icon resolves, every SVG parses, every lesson one step). **Figures:** after every brush, the saw and a shape cut, the skin indices, skin weights, rest shape, an existing key ("Smile"), the bones, bone inverses and bind matrix are byte-identical; the .glb reloads with 11/11 bones, its weights and all keys.
 
 ## What could not be tested here
 
@@ -182,23 +196,23 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | CLAY | Clay: round / ribbon (when Clay is picked) | `clayIc` |
 | CLAY | Dots: balls / rings / cubes / spikes (when Dots is picked) | `dotsIc` |
 | CLAY | Other hand smooths: on / off | `supportIc` |
-| CLAY | New asset / Back to the figure | `assetIc` / `backFigureIc` |
-| CLAY | Controls: Substance / Atelier | `controllerIc` |
-| CLAY | Controller map | `controllerIc` |
-| CLAY | Sculpt together / Together: N people | `togetherIc` |
-| CLAY | My avatar: <look> | `lookIc` |
-| CLAY | My avatar colours: my colour / <gradient> | `gradientIc` |
-| CLAY | Rod, Twist: N°, Rod end: tapered / blunt | `rodIc`, `twistIc`, `taperIc` |
-| CLAY | Make the emblem | `emblemIc` |
-| CLAY | Ball | `ballIc` |
-| CLAY | Colour wheel (opens the wheel: colour, light, see-through, gradient strip with + and -) | `wheelIc` |
-| CLAY | Gradient: from Colour / emblem blue / emblem orange / sunset / ocean / ... / custom | `gradientIc` |
-| CLAY | Gradient tool | `gradientIc` |
-| CLAY | Skin: smooth / marble / wood / scales / speckle / stripes / spots / camo / clouds (when the Gradient tool is picked) | `skinIc` |
-| CLAY | Look tool | `lookIc` |
-| CLAY | Look: matte / satin / gloss / metal / chrome / glow / glass / pearl / velvet / candy / toon | `finishIc` |
-| CLAY | Join pieces | `joinIc` |
-| CLAY | Spin: on / off | `spinIc` |
+| SHAPES | New asset / Back to the figure | `assetIc` / `backFigureIc` |
+| TOGETHER | Controls: Substance / Atelier | `controllerIc` |
+| TOGETHER | Controller map | `controllerIc` |
+| TOGETHER | Sculpt together / Together: N people | `togetherIc` |
+| TOGETHER | My avatar: <look> | `lookIc` |
+| TOGETHER | My avatar colours: my colour / <gradient> | `gradientIc` |
+| DRAW | Draw: rod / tube / ribbon / ink, Stroke, Twist: N°, Rod end: tapered / blunt | `rodIc`, `twistIc`, `taperIc` |
+| SHAPES | Make the emblem | `emblemIc` |
+| SHAPES | Ball | `ballIc` |
+| COLOUR | Colour wheel (opens the wheel: colour, light, see-through, gradient strip with + and -) | `wheelIc` |
+| COLOUR | Gradient: from Colour / emblem blue / emblem orange / sunset / ocean / ... / custom | `gradientIc` |
+| COLOUR | Gradient tool | `gradientIc` |
+| COLOUR | Skin: smooth / marble / wood / scales / speckle / stripes / spots / camo / clouds (when the Gradient tool is picked) | `skinIc` |
+| COLOUR | Look tool | `lookIc` |
+| COLOUR | Look: matte / satin / gloss / metal / chrome / glow / glass / pearl / velvet / candy / toon | `finishIc` |
+| SHAPES | Join pieces | `joinIc` |
+| SHAPES | Spin: on / off | `spinIc` |
 | CLAY | Expressions ▸ | `motionIc` |
 | EXPRESSIONS | ▶ <shape key> (one tile per key, tap to play it) | `pulseIc` |
 | EXPRESSIONS | Pulse: quick / normal / slow | `pulseSpeedIc` |
@@ -206,6 +220,7 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | EXPRESSIONS | Record face / Stop recording | `recordFaceIc` |
 | EXPRESSIONS | Play the move | `playMoveIc` |
 | CLAY | Undo stroke / Redo stroke | `undoStroke` / `redoStroke` |
+| CLAY | Shapes ▸ / Draw ▸ / Colour ▸ / Layers ▸ / Together ▸ / Expressions ▸ | `shapesIc` / `rodIc` / `wheelIc` / `layersIc` / `togetherIc` / `motionIc` |
 | CLAY | Shapes ▸ | `shapesIc` |
 | CLAY | Layers ▸ | `layersIc` |
 | SHAPES | Place a shape | `placeShapeIc` |
@@ -231,10 +246,12 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | LAYERS | Remesh layer | `remeshIc` |
 | LAYERS | Budget: all / 5k / 20k / 50k / 100k | `budgetIc` |
 | LAYERS | Save clay | `floppy` |
+| LAYERS | Keep work / Open kept work ▸ | `keepIc` |
+| KEPT WORKS | (one tile per kept work, tap to open it) | `keepIc` |
 
-New icons in this package (64): `clayIc`, `flattenIc`, `pinchIc`, `scrapeIc`, `smearIc`, `dotsIc`, `opAddIc`, `opSubIc`, `opPaintIc`, `opIntersectIc`, `tintIc`, `symBoth`, `steadyIc`, `falloffIc`, `shapesIc`, `layersIc`, `primSphere`, `primCube`, `primCylinder`, `primCone`, `primTorus`, `primCapsule`, `placeShapeIc`, `applyShapeIc`, `dropShapeIc`, `blendIc`, `makeClayIc`, `holdIc`, `clayFigIc`, `layerAddIc`, `dupIc`, `mergeIc`, `groupIc`, `ungroupIc`, `mergeGroupIc`, `trashIc`, `remeshIc`, `detailIc`, `budgetIc`, `layerPickIc`, `assetIc`, `backFigureIc`, `finishIc`, `supportIc`, `motionIc`, `pulseIc`, `pulseSpeedIc`, `repeatIc`, `recordFaceIc`, `playMoveIc`, `emblemIc`, `spinIc`, `rodIc`, `twistIc`, `taperIc`, `wheelIc`, `gradientIc`, `skinIc`, `lookIc`, `ballIc`, `joinIc`, `controllerIc`, `togetherIc`, `sculptNextIc`.
+New icons in this package (65): `clayIc`, `flattenIc`, `pinchIc`, `scrapeIc`, `smearIc`, `dotsIc`, `opAddIc`, `opSubIc`, `opPaintIc`, `opIntersectIc`, `tintIc`, `symBoth`, `steadyIc`, `falloffIc`, `shapesIc`, `layersIc`, `primSphere`, `primCube`, `primCylinder`, `primCone`, `primTorus`, `primCapsule`, `placeShapeIc`, `applyShapeIc`, `dropShapeIc`, `blendIc`, `makeClayIc`, `holdIc`, `clayFigIc`, `layerAddIc`, `dupIc`, `mergeIc`, `groupIc`, `ungroupIc`, `mergeGroupIc`, `trashIc`, `remeshIc`, `detailIc`, `budgetIc`, `layerPickIc`, `assetIc`, `backFigureIc`, `finishIc`, `supportIc`, `motionIc`, `pulseIc`, `pulseSpeedIc`, `repeatIc`, `recordFaceIc`, `playMoveIc`, `emblemIc`, `spinIc`, `rodIc`, `twistIc`, `taperIc`, `wheelIc`, `gradientIc`, `skinIc`, `lookIc`, `ballIc`, `joinIc`, `controllerIc`, `keepIc`, `togetherIc`, `sculptNextIc`.
 
-## One lesson step per tool (65)
+## One lesson step per tool (68)
 
 | Tool | The step (shown on the lesson card, with a Show me button for the tile) | Tile it points to |
 |---|---|---|
@@ -284,10 +301,13 @@ New icons in this package (64): `clayIc`, `flattenIc`, `pinchIc`, `scrapeIc`, `s
 | Record a move | Tap Record face, play a few expressions, then Stop recording: it becomes an animation that Save figure keeps in the .glb. | Record face (`recordFaceIc`) |
 | Play the move | Tap Play the move to watch the last recorded expression move once. | Play the move (`playMoveIc`) |
 | Make the emblem | Tap Make the emblem: your two-figure emblem appears beside you, each body a rectangular rod twisted, bent and tapered, in its own colours, turning slowly. | Make the emblem (`emblemIc`) |
-| Rod | Pick Rod, then pinch and draw a curve in the air: a solid rectangular rod follows your finger, twisted and tapered to a point. Size sets how wide it is. | Rod (`rodIc`) |
+| Draw | Pick Rod, then pinch and draw a curve in the air: a solid rectangular rod follows your finger, twisted and tapered to a point. Size sets how wide it is. | Draw: rod (`rodIc`) |
 | Twist | With Rod picked, tap Twist to choose how far the next rod turns from one end to the other: 0, 90, 180, 360 or 540 degrees. | Twist: 180° (`twistIc`) |
 | Rod end | With Rod picked, tap Rod end: tapered draws the end out to a point, blunt keeps it full size. | Rod end: tapered (`taperIc`) |
 | Spin | Pick some clay, then tap Spin: the whole work turns slowly round, one turn every 10 seconds. Tap again and it eases to a stop. Save clay keeps the spin. | Spin: off (`spinIc`) |
+| Tube, ribbon, ink | On the Draw page, tap Stroke to choose a rod, a round tube, a flat ribbon or a fine ink line, then pinch and draw in the air: it comes out in your gradient. | Stroke: rod (`rodIc`) |
+| Keep work | On the Layers page, tap Keep work: your clay, rods and balls are kept on this headset as they are, still editable. | Keep work (`keepIc`) |
+| Open kept work | Tap Open kept work and pick one: it comes back as clay you can keep shaping. Open it before sculpting together and whoever joins gets it too. | Open kept work ▸ (`keepIc`) |
 | Ball | Pick Ball, pinch where you want the middle of a head, and pull your hand away: the ball grows with you. Let go and it stays, smooth and in a gradient. | Ball (`ballIc`) |
 | Colour wheel | Tap Colour wheel: a wheel floats beside your hand. Pinch on it and slide: round it changes the colour, from the middle out makes it stronger. Clay, paint, rods and balls take that colour. | Colour wheel (`wheelIc`) |
 | Light and see-through | On the colour wheel, pinch the bar on the right and slide up for lighter, down for darker; the bar on the left makes the colour see-through as you slide down. | Colour wheel (`wheelIc`) |

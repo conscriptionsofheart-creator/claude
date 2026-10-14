@@ -12,7 +12,7 @@ export const SUM_EVERY = 480;   /* a checksum every 480 numbered messages: about
 const CFG_SKIP = new Set(['on']);
 
 export function makeCollab(E) {
-  const C = { on: false, me: null, name: '', state: 'off', t: null, lastN: 0, peers: new Map(), order: [], holdAfter: null, buffer: [], sums: new Map(), sentCfg: {}, lastResync: -1e9, joinedAt: 0, waitT: 0 };
+  const C = { on: false, me: null, name: '', state: 'off', t: null, lastN: 0, peers: new Map(), order: [], holdAfter: null, buffer: [], sums: new Map(), sentCfg: {}, lastResync: -1e9, joinedAt: 0, waitT: 0, seqOut: 0 };
   const say = t => { try { E.say(t); } catch (e) { /* optional */ } };
   const send = m => { if (C.t) try { C.t.send(m); } catch (e) { say('Sculpt together: the link dropped (' + (e && e.message || e) + ').'); } };
   const nameOf = id => { const c = C.peers.get(id); return c ? c.name : null; };
@@ -103,7 +103,7 @@ export function makeCollab(E) {
     if (!C.on || !C.me || C.state === 'connecting') return;
     const m = { t: 'f', h: (hands || []).map(serHand), dt: q(Math.min(0.1, dt || 0.016)) }, c = cfgDiff(); if (c) m.c = c;
     const hd = E.head ? E.head() : null; if (hd && hd.p && hd.q) m.hd = [q(hd.p.x), q(hd.p.y), q(hd.p.z), q(hd.q.x), q(hd.q.y), q(hd.q.z), q(hd.q.w)];   /* where your head is: your avatar stands under it on the others' headsets */
-    send(m);
+    m.s = ++C.seqOut; send(m); return m.s;   /* the frame's own number: the engine shows your stroke at once, until this number comes back worked */
   }
   function act(fn, args) { if (!C.on || !C.me) return false; const m = { t: 'a', fn, a: args || [] }, c = cfgDiff(); if (c) m.c = c; send(m); return true; }   /* the settings travel with the tap, so it runs with them */
   return {
@@ -180,7 +180,7 @@ export function matFrom(THREE, d) {
 }
 /* an object made by the engine (a rod, the emblem): groups and meshes with standard materials, as data */
 export function encodeObject(o) {
-  const out = { k: o.isMesh ? 'mesh' : 'group', name: o.name, t: trs(o), ud: { noMerge: !!(o.userData && o.userData.noMerge) }, c: [] };
+  const out = { k: o.isMesh ? 'mesh' : 'group', name: o.name, t: trs(o), ud: (() => { const u = o.userData || {}, x = { noMerge: !!u.noMerge }; ['author', 'authors', 'made'].forEach(k => { if (u[k] != null) x[k] = u[k]; }); return x; })(), c: [] };
   if (o.isMesh) { const mt = Array.isArray(o.material) ? o.material[0] : o.material; out.g = encodeGeometry(o.geometry); out.mat = matInfo(mt); }
   o.children.forEach(ch => { if (!/^vr/.test(ch.name || '')) out.c.push(encodeObject(ch)); }); return out;
 }

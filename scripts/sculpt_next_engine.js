@@ -26,6 +26,7 @@ import { GRADIENT_NAMES, gradientOf, alphaAt, colourAt as gradColour, SKIN_NAMES
 import { makeWheel } from './sculpt_next_wheel.js';
 import { makeAvatar, rigAvatar } from './sculpt_next_avatar.js';
 import { makeControls, CONTROL_MAP } from './sculpt_next_controls.js';
+import { keepWork as storeKeep, listWorks, loadWork, forgetWork } from './sculpt_next_store.js';
 import { rodGeometry, colourAt } from './sculpt_next_rod.js';
 import { createField, opShape, opIntersectField } from './sculpt_next_sdf.js';
 import { makeCollab, connectWs, matInfo, matFrom, encodeGeometry, decodeGeometry, encodeObject, decodeObject, encodeField, decodeFieldInto, makeHash } from './sculpt_next_collab.js';   /* the synchronous forms, for one-off pinches (stamp) */
@@ -66,6 +67,7 @@ export function createVrSculpt(THREE, core, host) {
     controls: 'substance',   /* the controllers inside Sculpt: Substance 3D Modeler's layout (sculpt_next_controls.js) or the Atelier's own */
     avatarLook: 'pearl', avatarGradient: 'own', avatarUrl: '',   /* sculpting together: how YOU look to the others (a look, a gradient or your own colour, and a MakeHuman or other rigged .glb when the page can load one) */
     skin: 'smooth',       /* how the Gradient tool lays the gradient: along your line, or as marble, wood, scales, speckle, stripes, spots, camo, clouds */
+    rodProfile: 'rod',   /* Draw: rod | tube | ribbon | ink */
     rodTwist: 180, rodEnd: 'taper',   /* Rod: how far it twists from one end to the other (degrees); its far end tapered to a point or blunt */
   };
   const undoS = [];
@@ -260,7 +262,7 @@ export function createVrSculpt(THREE, core, host) {
     let sh = steady(hands || []); if (sh[0]) { lastTip.copy(sh[0].tip); if (sh[0].dir) lastDir.copy(sh[0].dir); }
     if (wheel.isOpen) sh = wheel.frame(sh);
     if (ctl.picking || picked.size) sh = sh.map(h => { if (h.pinch && !picked.has(h.id) && ctl.pickColour(h.tip)) picked.add(h.id); if (picked.has(h.id)) { if (!h.pinch) picked.delete(h.id); return Object.assign({}, h, { pinch: false }); } return h; });   /* colour pick (support stick click): that pinch takes a colour and does not sculpt   /* a pinch that starts on the colour wheel works the wheel, not the clay */
-    if (collab.on) { collab.localFrame(sh, dt); clay.tick(Math.min(10, 4 + clay.backlog() * 0.25)); collabCursors(sh); updateAvatars(dt); return; }   /* together: this frame's hands go to everyone (you too) in one order, and are worked when they come back */
+    if (collab.on) { const seq = collab.localFrame(sh, dt); previewPush(sh, seq); clay.tick(Math.min(10, 4 + clay.backlog() * 0.25)); collabCursors(sh); updateAvatars(dt); previewDraw(); return; }   /* together: this frame's hands go to everyone (you too) in one order, and are worked when they come back */
     fig.frameStart(); if (tick % 45 === 0 && !fig.strokes.size && !route.size) targets();   /* pick up objects pulled into the room while the bench is on */
     clay.tick(4);   /* clay chunks that changed: to the worker (or meshed here within 4 ms) */
     step(sh, dt);
@@ -321,7 +323,7 @@ export function createVrSculpt(THREE, core, host) {
   /* ---------- Ruth's emblem (sculpt_next_emblem.js): built as clay, a layer per part, a few ms a frame; it spins slowly when it is done. One undo takes it away. ---------- */
   function makeEmblem(opts) {
     opts = opts || {}; const at = emblemAt(opts), g = new THREE.Group(); g.name = 'Emblem'; g.position.copy(at); g.userData.noMerge = true; g.updateMatrixWorld(true);
-    const ent = { id: 'emblem' + (assets.length + 1), name: 'Emblem', object: g, kind: 'emblem' }, w0 = who, speak = !quiet; let done = false;
+    stamp(g); const ent = { id: 'emblem' + (assets.length + 1), name: 'Emblem', object: g, kind: 'emblem' }, w0 = who, speak = !quiet; let done = false;
     const put = () => { try { host.addObject ? host.addObject(g) : null; } catch (e) { /* the host's */ } if (!assets.includes(ent)) assets.push(ent); if (opts.spin !== false) motion.spin(g, opts.turn || 10); targets(); };
     const take = () => { motion.stopSpin(g); try { host.removeObject ? host.removeObject(g) : (g.parent && g.parent.remove(g)); } catch (e) { /* gone */ } const i = assets.indexOf(ent); if (i >= 0) assets.splice(i, 1); targets(); };
     put();   /* it appears part by part over a few frames (a slice at a time in the job queue), so no frame is held up; one undo takes it away once it is whole */
@@ -335,14 +337,19 @@ export function createVrSculpt(THREE, core, host) {
   let rods = new Map(), rodN = 0;
   /* rods and balls come out in the current gradient (sculpt_next_looks.js: a named one or your own from the wheel, see-through stops included) */
   const paintStops = c => gradientOf(c, CLAY_COLORS);
-  const rodOpts = (len, c) => { const w = c.size / 100 * 2, G = paintStops(c);
-    return { width: w, thick: w * 0.55, twist: [[0, 0], [1, c.rodTwist]], taper: c.rodEnd === 'taper' ? [[0, 0.35], [0.12, 1], [0.6, 1], [1, 0.02]] : [[0, 1], [1, 1]], taperThick: c.rodEnd === 'taper' ? [[0, 0.5], [0.15, 1], [0.7, 1], [1, 0.1]] : [[0, 1], [1, 1]], stretch: c.rodEnd === 'taper' ? 0.15 : 0,
-      front: G.front, back: G.back, alphaAt: G.see ? t => alphaAt(G.front, t) : null, slices: Math.max(24, Math.min(320, Math.round(len * 400))), around: 32 }; };
+  /* Draw (Multibrush / Gravity Sketch style strokes from the same rod maker): a rectangular ROD (twisted, tapered), a round TUBE, a flat RIBBON (twisted), a fine INK line */
+  const PROFILE_NAME = { rod: 'Rod', tube: 'Tube', ribbon: 'Ribbon', ink: 'Ink' };
+  const rodOpts = (len, c) => {
+    const G = paintStops(c), p = c.rodProfile || 'rod', w = c.size / 100 * (p === 'ink' ? 0.5 : 2), soft = [[0, 0.25], [0.06, 1], [0.94, 1], [1, 0.25]], tip = [[0, 0.35], [0.12, 1], [0.6, 1], [1, 0.02]], flat = [[0, 1], [1, 1]];
+    const taper = c.rodEnd === 'taper' ? tip : p === 'rod' ? flat : soft, thick = p === 'tube' || p === 'ink' ? w : p === 'ribbon' ? Math.max(0.0015, w * 0.07) : w * 0.55;
+    return { width: w, thick, round: p === 'tube' || p === 'ink' ? 1 : p === 'ribbon' ? 0.5 : 0.28, twist: [[0, 0], [1, p === 'tube' || p === 'ink' ? 0 : c.rodTwist]], taper, taperThick: c.rodEnd === 'taper' && p === 'rod' ? [[0, 0.5], [0.15, 1], [0.7, 1], [1, 0.1]] : taper, stretch: c.rodEnd === 'taper' ? 0.15 : 0,
+      front: G.front, back: p === 'tube' || p === 'ink' ? G.front : G.back, alphaAt: G.see ? t => alphaAt(G.front, t) : null, slices: Math.max(24, Math.min(320, Math.round(len * 400))), around: p === 'ink' ? 10 : p === 'ribbon' ? 16 : 32 };
+  };
   const seeThrough = (mat, on) => { mat.transparent = !!on; mat.depthWrite = !on; mat.needsUpdate = true; return mat; };
   function rodFrame(hand) {
     let st = rods.get(hand.id);
     if (hand.pinch) {
-      if (!st) { const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.04 })); mesh.name = 'Rod ' + (assets.filter(a => a.kind === 'rod').length + 1); mesh.userData.noMerge = true; try { host.addObject ? host.addObject(mesh) : null; } catch (e) { /* host */ } st = { pts: [hand.tip.clone()], mesh, c: Object.assign({}, cfg), n: 0 }; rods.set(hand.id, st); strokeStart(); }
+      if (!st) { const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.04 })); mesh.name = PROFILE_NAME[cfg.rodProfile || 'rod'] + ' ' + (assets.filter(a => a.kind === 'rod' && a.name.startsWith(PROFILE_NAME[cfg.rodProfile || 'rod'])).length + 1); mesh.userData.noMerge = true; try { host.addObject ? host.addObject(mesh) : null; } catch (e) { /* host */ } st = { pts: [hand.tip.clone()], mesh, c: Object.assign({}, cfg), n: 0 }; rods.set(hand.id, st); strokeStart(); }
       const last = st.pts[st.pts.length - 1]; if (hand.tip.distanceTo(last) >= 0.008) { st.pts.push(hand.tip.clone()); if (++st.n % 2 === 0) rodBuild(st, false); }
     } else if (st) { rods.delete(hand.id); rodEnd(st); }
   }
@@ -354,10 +361,10 @@ export function createVrSculpt(THREE, core, host) {
   }
   function rodEnd(st) {
     if (st.pts.length < 3) { try { host.removeObject ? host.removeObject(st.mesh) : (st.mesh.parent && st.mesh.parent.remove(st.mesh)); } catch (e) { /* gone */ } once('Draw a longer line for a rod.'); return; }
-    rodBuild(st, true); touchedSince.add(st.mesh); const ent = { id: 'rod' + (++rodN), name: st.mesh.name, object: st.mesh, kind: 'rod' }; assets.push(ent); targets();
+    rodBuild(st, true); touchedSince.add(st.mesh); stamp(st.mesh); const ent = { id: 'rod' + (++rodN), name: st.mesh.name, object: st.mesh, kind: 'rod' }; assets.push(ent); targets();
     const take = () => { try { host.removeObject ? host.removeObject(st.mesh) : (st.mesh.parent && st.mesh.parent.remove(st.mesh)); } catch (e) { /* gone */ } const i = assets.indexOf(ent); if (i >= 0) assets.splice(i, 1); targets(); };
     const put = () => { try { host.addObject ? host.addObject(st.mesh) : null; } catch (e) { /* host */ } if (!assets.includes(ent)) assets.push(ent); targets(); };
-    pushUndo({ label: 'rod', undo: take, redo: put }); dirty(st.mesh); say(st.mesh.name + ': twisted ' + st.c.rodTwist + ' degrees, ' + (st.c.rodEnd === 'taper' ? 'tapered to a point' : 'blunt') + '. Brush it, Hold it, or pick it as a stamp.');
+    pushUndo({ label: 'rod', undo: take, redo: put }); dirty(st.mesh); const pf = st.c.rodProfile || 'rod'; say(st.mesh.name + (pf === 'tube' || pf === 'ink' ? '' : ': twisted ' + st.c.rodTwist + ' degrees') + (st.c.rodEnd === 'taper' ? ', tapered to a point' : '') + '. Brush it, Hold it, Join it, or pick it as a stamp.');
   }
 
   /* ---------- Ball: pinch where its middle goes and pull out to its size; a smooth sphere in a gradient (the emblem's heads). One undo per ball. ---------- */
@@ -377,7 +384,7 @@ export function createVrSculpt(THREE, core, host) {
     } else if (st) { rods.delete(hand.id); ballEnd(st); }
   }
   function ballEnd(st) {
-    const mesh = st.mesh, ent = { id: 'ball' + (++rodN), name: mesh.name, object: mesh, kind: 'ball' }; assets.push(ent); touchedSince.add(mesh); targets();
+    const mesh = st.mesh, ent = { id: 'ball' + (++rodN), name: mesh.name, object: mesh, kind: 'ball' }; stamp(mesh); assets.push(ent); touchedSince.add(mesh); targets();
     const take = () => { try { host.removeObject ? host.removeObject(mesh) : (mesh.parent && mesh.parent.remove(mesh)); } catch (e) { /* gone */ } const i = assets.indexOf(ent); if (i >= 0) assets.splice(i, 1); targets(); };
     const put = () => { try { host.addObject ? host.addObject(mesh) : null; } catch (e) { /* host */ } if (!assets.includes(ent)) assets.push(ent); targets(); };
     pushUndo({ label: 'ball', undo: take, redo: put }); dirty(mesh); say(mesh.name + ': ' + Math.round(mesh.scale.x * 200) + ' cm across. Brush it, Hold it, or Join it with the rest.');
@@ -386,7 +393,7 @@ export function createVrSculpt(THREE, core, host) {
   function joinPieces() {
     const parts = assets.filter(a => a.object.parent); if (parts.length < 2) { say('Join needs two or more pieces: draw a rod, a ball, or bring the emblem first.'); return false; }
     const box = new THREE.Box3(); parts.forEach(a => box.expandByObject(a.object)); const ctr = box.getCenter(new V3()), g = new THREE.Group(); g.name = 'Piece ' + (assets.filter(a => a.kind === 'piece').length + 1); g.userData.noMerge = true; g.position.copy(ctr);
-    const ent = { id: 'piece' + (++rodN), name: g.name, object: g, kind: 'piece' }, was = parts.map(a => ({ a, parent: a.object.parent, idx: assets.indexOf(a), spin: motion.spinning(a.object) }));
+    stamp(g); g.userData.authors = [...new Set(parts.map(a => a.object.userData.author).filter(Boolean))]; const ent = { id: 'piece' + (++rodN), name: g.name, object: g, kind: 'piece' }, was = parts.map(a => ({ a, parent: a.object.parent, idx: assets.indexOf(a), spin: motion.spinning(a.object) }));
     const doJoin = () => { try { host.addObject ? host.addObject(g) : null; } catch (e) { /* host */ } g.updateMatrixWorld(true); was.forEach(w => { if (w.spin) motion.stopSpin(w.a.object); motion.setSpinState(motion.spinState().filter(([o]) => o !== w.a.object)); g.attach(w.a.object); const i = assets.indexOf(w.a); if (i >= 0) assets.splice(i, 1); }); assets.push(ent); targets(); };
     const undoJoin = () => { motion.stopSpin(g); motion.setSpinState(motion.spinState().filter(([o]) => o !== g)); was.forEach(w => { (w.parent || g.parent).attach(w.a.object); if (!assets.includes(w.a)) assets.splice(Math.min(w.idx, assets.length), 0, w.a); }); const i = assets.indexOf(ent); if (i >= 0) assets.splice(i, 1); try { host.removeObject ? host.removeObject(g) : (g.parent && g.parent.remove(g)); } catch (e) { /* gone */ } targets(); };
     doJoin(); touchedSince.add(g); pushUndo({ label: 'join', undo: undoJoin, redo: doJoin }); dirty(g); say(parts.length + ' pieces are one now: ' + g.name + '. Hold moves it, Spin turns it, Save keeps it.'); return g;
@@ -468,6 +475,9 @@ export function createVrSculpt(THREE, core, host) {
   const wheel = makeWheel(THREE, { cfg, palette: () => CLAY_COLORS, gradientStops: () => paintStops(cfg).front, say: t => say(t), addHelper: o => { try { host.addObject ? host.addObject(o) : null; } catch (e) { /* host */ } }, removeHelper: o => { try { if (o.parent) o.parent.remove(o); } catch (e) { /* gone */ } } });
   function openWheel() { const d = lastDir.clone().setY(0); if (d.lengthSq() < 1e-6) d.set(0, 0, -1); d.normalize(); const at = lastTip.clone().addScaledVector(d, 0.14).add(new V3(0, 0.06, 0)), face = lastTip.clone().addScaledVector(d, -0.5).add(new V3(0, 0.25, 0)); wheel.open(at, face); say('Colour wheel: pinch and slide on it to pick a colour; the bar on the right is light and dark, the left one how see-through; + puts the colour in your gradient.'); return true; }
 
+  /* who made it (the report: "ownership is an object-level feature"): kept in the object's userData, so the .glb carries it as extras */
+  function stamp(o) { const nm = collab.on ? ((ctxs.get(who) || {}).name || null) : (() => { try { return host.userName ? host.userName() : null; } catch (e) { return null; } })(); if (nm) o.userData.author = nm; o.userData.made = 'sculpt next'; }
+
   /* ---------- the menu's calls ---------- */
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
   /* each setting: the plain change (pure) and what it sets going (after). Sculpting together, a tap changes your menu at once and the rest happens in the shared order. */
@@ -478,7 +488,7 @@ export function createVrSculpt(THREE, core, host) {
     op: v => { cfg.op = ['add', 'subtract', 'paint', 'intersect'].includes(v) ? v : 'add'; }, falloff: v => { cfg.falloff = ['smooth', 'linear', 'sharp', 'flat'].includes(v) ? v : 'smooth'; },
     stabilize: v => { cfg.stabilize = clampN(+v || 0, 0, 1); }, blend: v => { cfg.blend = clampN(+v || 0, 0, 1); }, clayProfile: v => { cfg.clayProfile = v === 'flat' ? 'flat' : 'round'; }, dot: v => { cfg.dot = ['ball', 'ring', 'cube', 'spike'].includes(v) ? v : 'ball'; },
     prim: v => { cfg.prim = ['sphere', 'cube', 'cylinder', 'cone', 'torus', 'capsule'].includes(v) ? v : 'sphere'; }, detail: v => { cfg.detail = clampN(+v || 5, 2, 20); }, tint: v => { cfg.tint = ((v | 0) % CLAY_COLORS.length + CLAY_COLORS.length) % CLAY_COLORS.length; },
-    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, rodTwist: v => { cfg.rodTwist = clampN(+v || 0, -720, 720); }, rodEnd: v => { cfg.rodEnd = v === 'blunt' ? 'blunt' : 'taper'; }, rgb: v => { cfg.rgb = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : ''; }, alpha: v => { cfg.alpha = clampN(+v, 0, 1); }, gradient: v => { cfg.gradient = GRADIENT_NAMES.includes(v) ? v : 'from Colour'; }, gradCustom: v => { cfg.gradCustom = String(v || '').slice(0, 400); }, skin: v => { cfg.skin = SKIN_NAMES.includes(v) ? v : 'smooth'; }, avatarLook: v => { cfg.avatarLook = LOOK_NAMES.includes(v) ? v : 'pearl'; }, avatarGradient: v => { cfg.avatarGradient = v === 'own' || GRADIENT_NAMES.includes(v) ? v : 'own'; }, avatarUrl: v => { cfg.avatarUrl = String(v || '').slice(0, 300); }, controls: v => { cfg.controls = v === 'atelier' ? 'atelier' : 'substance'; }, supportSmooth: v => { cfg.supportSmooth = !!v; }, haptics: v => { cfg.haptics = !!v; },
+    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, rodTwist: v => { cfg.rodTwist = clampN(+v || 0, -720, 720); }, rodEnd: v => { cfg.rodEnd = v === 'blunt' ? 'blunt' : 'taper'; }, rodProfile: v => { cfg.rodProfile = ['rod', 'tube', 'ribbon', 'ink'].includes(v) ? v : 'rod'; }, rgb: v => { cfg.rgb = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : ''; }, alpha: v => { cfg.alpha = clampN(+v, 0, 1); }, gradient: v => { cfg.gradient = GRADIENT_NAMES.includes(v) ? v : 'from Colour'; }, gradCustom: v => { cfg.gradCustom = String(v || '').slice(0, 400); }, skin: v => { cfg.skin = SKIN_NAMES.includes(v) ? v : 'smooth'; }, avatarLook: v => { cfg.avatarLook = LOOK_NAMES.includes(v) ? v : 'pearl'; }, avatarGradient: v => { cfg.avatarGradient = v === 'own' || GRADIENT_NAMES.includes(v) ? v : 'own'; }, avatarUrl: v => { cfg.avatarUrl = String(v || '').slice(0, 300); }, controls: v => { cfg.controls = v === 'atelier' ? 'atelier' : 'substance'; }, supportSmooth: v => { cfg.supportSmooth = !!v; }, haptics: v => { cfg.haptics = !!v; },
     finish: v => { cfg.finish = LOOK_NAMES.includes(v) ? v : 'satin'; }, pulseDur: v => { cfg.pulseDur = clampN(+v || 0.6, 0.2, 4); }, pulseRepeat: v => { cfg.pulseRepeat = clampN(v | 0, 1, 10); }, clayOnFigure: v => { cfg.clayOnFigure = v === 'clay' ? 'clay' : 'skin'; }, budget: v => { cfg.budget = Math.max(0, v | 0); },
   };
   const after = {
@@ -534,6 +544,7 @@ export function createVrSculpt(THREE, core, host) {
     if (clock && m.dt) motion.tick(m.dt);   /* the first person's frames are the room's clock: a spin or an expression turns the same on every headset */
     if (!m.h) return; const hands = m.h.map(h => handFrom(x, h));
     withPeer(x, () => { fig.frameStart(); step(hands, m.dt || 0.016); });
+    if (x.mine && m.s) prev.done = Math.max(prev.done, m.s);
     if (x.mine) Object.keys(x.out).forEach(id => { const p = x.out[id].pulse; if (p) { const k = id.slice(x.id.length + 1); myPulse[k] = Math.max(myPulse[k] || 0, p); } });
   }
   const unref = v => (v && typeof v === 'object' && v.L ? clay.layerById(v.L) : v), refArg = v => (v && v.field && v.work ? { L: v.id } : v);
@@ -565,9 +576,9 @@ export function createVrSculpt(THREE, core, host) {
   const snapStats = { snapMs: 0, restoreMs: 0, snapSlices: 0, restoreSlices: 0 };
   const runGen = g => { let r; do r = g.next(); while (!r.done); return r.value; };
   /* the work as data at one point of the shared order (a newcomer starts from it). A layer, a rod or a piece per slice: the job queue runs it over a few frames and every later message waits for it. */
-  function* snapshotGen(order) {
+  function* snapshotGen(order, opts) {
     const t0 = performance.now(); let ms = 0, n = 0; const tick = () => { n++; };
-    const list = new Set(touched); if (touchedAll) { targets().forEach(m => list.add(m)); if (figure) figure.traverse(o => { if (o.isMesh) list.add(o); }); }
+    const list = opts && opts.noMeshes ? new Set() : new Set(touched); if (touchedAll && !(opts && opts.noMeshes)) { targets().forEach(m => list.add(m)); if (figure) figure.traverse(o => { if (o.isMesh) list.add(o); }); }
     const cl = clay.exportStateGen(encodeField); let r; for (;;) { const t = performance.now(); r = cl.next(); ms += performance.now() - t; if (r.done) break; tick(); yield; }
     const out = { v: 1, clay: r.value, assets: [], meshes: [], n: { seqN, rodN } };
     for (const a of assets) { if (!a.object.parent) continue; const t = performance.now(); out.assets.push({ id: a.id, name: a.name, kind: a.kind, o: encodeObject(a.object) }); ms += performance.now() - t; tick(); yield; }
@@ -578,7 +589,7 @@ export function createVrSculpt(THREE, core, host) {
       ctxs: order.map(id => { const x = ctxs.get(id), act = x.mine ? clay.S.active : x.active; return { id, name: x.name, cfg: x.cfg, active: act ? act.id : null, forceNew: x.mine ? !!clay.S.forceNew : x.forceNew, shape: (x.mine ? shapes : x.shapes).state() }; }) });
     snapStats.snapMs = Math.round(ms); snapStats.snapSlices = n; void t0; return out;
   }
-  function* restoreGen(d) {
+  function* restoreGen(d, opts) {
     let ms = 0, n = 0; const t1 = () => performance.now();
     let t = t1(); endAll(); ctxs.forEach(x => { if (!x.mine && x.shapes) { x.shapes.drop(); x.hold.end(); } }); ctxs.clear(); motion.stopAll(); motion.setSpinState([]);
     assets.slice().forEach(a => { try { host.removeObject ? host.removeObject(a.object) : (a.object.parent && a.object.parent.remove(a.object)); } catch (e) { /* gone */ } }); assets.length = 0; ms += t1() - t; n++; yield;
@@ -589,11 +600,27 @@ export function createVrSculpt(THREE, core, host) {
       else if (s.paint && !m.userData._paintMat) { const mats = [].concat(m.material).map(x => { const c = x.clone(); c.vertexColors = true; c.needsUpdate = true; return c; }); m.material = Array.isArray(m.material) ? mats : mats[0]; m.userData._paintMat = true; }
       if (s.dense) m.userData._bstDense = m.geometry.id; m.visible = s.vis !== false; touched.add(m); } ms += t1() - t; n++; yield; }
     t = t1(); fig.clear(); if (current) current.repose(); seqN = d.n.seqN; rodN = d.n.rodN;
-    asset = d.bench ? { figVisible: d.bench.figVisible } : null; if (figure) figure.visible = d.figVisible;
+    if (!(opts && opts.keepFigure)) { asset = d.bench ? { figVisible: d.bench.figVisible } : null; if (figure) figure.visible = d.figVisible; }
     motion.setSpinState(d.spins.map(([r, sp]) => [resolveRef(r), sp])); undoS.length = 0; redoBy.clear(); touchedSince.clear(); targets(); ms += t1() - t;
     snapStats.restoreMs = Math.round(ms); snapStats.restoreSlices = n; return true;
   }
   const snapshot = order => runGen(snapshotGen(order)), restore = d => runGen(restoreGen(d));
+  /* ---------- Keep work / Open kept work (sculpt_next_store.js): the clay, rods, balls and emblem as editable data in the headset's own database ---------- */
+  let kept = [], keptBusy = false;
+  function refreshKept() { if (keptBusy) return; keptBusy = true; listWorks().then(l => { kept = l; keptBusy = false; if (vs.menu && vs.menu.redraw) vs.menu.redraw(); }, () => { keptBusy = false; }); }
+  function keepWorkNow(name) {
+    if (!clay.works.some(w => w.group.parent && w.layers.length) && !assets.some(a => a.object.parent)) { say('There is nothing to keep yet.'); return false; }
+    name = name || (clay.works.find(w => w.group.parent) || {}).name || (assets[0] && assets[0].name) || 'Work';
+    clay.enqueue((function* () { const data = yield* snapshotGen([], { noMeshes: true }); data.ctxs = []; data.bench = null; return data; })(), data => {
+      storeKeep(name, data).then(() => { say('Kept "' + name + '" on this headset, editable. Layers > Open kept work brings it back as clay.'); refreshKept(); }, e => say('Could not keep it: ' + (e && e.message || e)));
+    }, 'keep');
+    return true;
+  }
+  function openWorkNow(id) {
+    if (collab.on) { say('Open your kept work before you start sculpting together; whoever joins then gets it.'); return false; }
+    loadWork(id).then(rec => { if (!rec) { say('That kept work is gone.'); return; } endAll(); clay.enqueue(restoreGen(rec.data, { keepFigure: true }), () => { targets(); say('"' + rec.name + '" is back, editable. Undo starts fresh from here.'); if (vs.menu && vs.menu.redraw) vs.menu.redraw(); }, 'open'); }, e => say('Could not open it: ' + (e && e.message || e)));
+    return true;
+  }
   /* the figure's and objects' lookup tables (posed copy, grid), one piece per slice, at a join: so the first stroke near them does not build them all in one frame */
   function* warmGen() { for (const m of targets()) { if (!m.parent || fig.hasEntry(m)) continue; try { fig.entryOf(m); } catch (e) { /* skipped */ } yield; } }
   function ctxFromSnap(s, mine) { const x = newCtx(s.id, s.name, s.cfg, mine), L = s.active ? clay.layerById(s.active) : null; if (mine) { clay.S.active = L; clay.S.forceNew = s.forceNew; shapes.setState(s.shape); } else { x.active = L; x.forceNew = s.forceNew; x.shapes.setState(s.shape); } return x; }
@@ -652,6 +679,17 @@ export function createVrSculpt(THREE, core, host) {
       o.visible = true; o.position.set(h.p[0], h.p[1], h.p[2]); o.scale.setScalar(h.pi ? 1.5 : 1); o.updateMatrixWorld(true); });
     for (let i = hands.length; i < list.length; i++) list[i].visible = false;
   }
+  /* your own stroke, shown the moment you make it: a light line along your fingertip until the relay has brought that frame back and the real clay, rod or cut is made (the report's "first plausible preview in the same frame"; on a home network it lasts a frame or two) */
+  const prev = { pts: [], line: null, done: 0 };
+  const PREVIEW_MODES = m => BRUSHES.has(m) || CURRENT_MODES.has(m) || m === 'rod' || m === 'ball' || m === 'gradient';
+  function previewPush(sh, seq) { if (!seq || !PREVIEW_MODES(cfg.mode)) return; sh.forEach(h => { if (h.pinch && !h.onWheel) prev.pts.push({ s: seq, id: h.id, p: h.tip.clone() }); }); if (prev.pts.length > 800) prev.pts.splice(0, prev.pts.length - 800); }
+  function previewDraw() {
+    prev.pts = prev.pts.filter(q => q.s > prev.done); const P = [];
+    for (let i = 1; i < prev.pts.length; i++) { const a = prev.pts[i - 1], b = prev.pts[i]; if (a.id !== b.id) continue; P.push(a.p.x, a.p.y, a.p.z, b.p.x, b.p.y, b.p.z); }
+    if (!P.length) { if (prev.line) prev.line.visible = false; return; }
+    if (!prev.line) { prev.line = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthTest: true })); prev.line.name = 'vrStrokePreview'; prev.line.frustumCulled = false; prev.line.userData.noMerge = true; try { host.addObject ? host.addObject(prev.line) : null; } catch (e) { /* host */ } }
+    const c = curRGB(cfg); prev.line.material.color.setRGB(c[0] / 255, c[1] / 255, c[2] / 255); prev.line.geometry.dispose(); prev.line.geometry = new THREE.BufferGeometry(); prev.line.geometry.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); prev.line.visible = true;
+  }
   function collabCursors(sh) { sh.forEach(h => { const rt = route.get(collab.me + ':' + h.id), hit = !!rt || !!clay.hit(h.tip, cfg.size / 100 * 1.3, true); cursor.hands[h.id] = { tip: h.tip, hit, radius: cfg.size / 100, mode: cfg.mode, op: cfg.op, pulse: cfg.haptics ? (myPulse[h.id] || 0) : 0 }; myPulse[h.id] = 0; }); }
   const collab = makeCollab({
     newCtx, frame: collabFrame, action: (x, fn, a, c) => collabAction(x, fn, a, c), endAllPeers, endPeer: x => withPeer(x, () => { endAll(); shapes.drop(); }),
@@ -671,10 +709,14 @@ export function createVrSculpt(THREE, core, host) {
   const CLAY_ACTS = new Set(['addLayer', 'pickLayer', 'stepLayer', 'toggleHide', 'toggleLock', 'duplicate', 'removeLayer', 'mergeDown', 'groupWithBelow', 'ungroup', 'mergeGroup', 'remesh', 'setFinish']);
   const clayUi = new Proxy(clay, { get: (t, k) => (collab.on && !curCtx && CLAY_ACTS.has(k) ? (...a) => collab.act('clay', [k, ...a.map(refArg)]) : Reflect.get(t, k)), set: (t, k, v) => { t[k] = v; return true; } });
   const shapesUi = new Proxy({}, { get: (t, k) => (collab.on && !curCtx && ['applyPending', 'drop', 'setKind'].includes(k) ? (...a) => collab.act('shapes', [k, ...a]) : Reflect.get(shapes, k)) });
-  const relayUrl = () => { try { const u = host.collabUrl && host.collabUrl(); if (u) return u; } catch (e) { /* host */ } try { const u = localStorage.getItem('sculptTogetherUrl'); if (u) return u; } catch (e) { /* storage */ } const L = typeof location !== 'undefined' ? location : { protocol: 'http:', hostname: 'localhost' }; return (L.protocol === 'https:' ? 'wss://' : 'ws://') + (L.hostname || 'localhost') + ':8787/?room=atelier'; };
+  const relayKey = () => { try { const k = host.collabKey && host.collabKey(); if (k) return k; } catch (e) { /* host */ } try { return localStorage.getItem('sculptTogetherKey') || ''; } catch (e) { return ''; } };
+  const withKey = u => { const k = relayKey(); return k && !/[?&]key=/.test(u) ? u + (u.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(k) : u; };   /* a private room: the relay lets in only those with the key */
+  const relayUrl0 = () => { try { const u = host.collabUrl && host.collabUrl(); if (u) return u; } catch (e) { /* host */ } try { const u = localStorage.getItem('sculptTogetherUrl'); if (u) return u; } catch (e) { /* storage */ } const L = typeof location !== 'undefined' ? location : { protocol: 'http:', hostname: 'localhost' }; return (L.protocol === 'https:' ? 'wss://' : 'ws://') + (L.hostname || 'localhost') + ':8787/?room=atelier'; };
+  const relayUrl = () => withKey(relayUrl0());
   const together = {
+    previewPoints: () => prev.pts.length,
     /* start({ url, transport, name }): join the room (the first one in starts it). Alone until someone else joins. */
-    start(o) { o = o || {}; endAll(); let t = o.transport; if (!t) { try { t = connectWs(o.url || relayUrl()); } catch (e) { say('Could not reach the sculpt relay: ' + (e && e.message || e)); return false; } } let nm = o.name; try { nm = nm || (host.userName && host.userName()) || localStorage.getItem('sculptName') || ''; } catch (e) { /* storage */ } collab.start(t, { name: nm }); say('Looking for the others…'); return true; },
+    start(o) { o = o || {}; endAll(); let t = o.transport; if (!t) { try { t = connectWs(o.url ? withKey(o.url) : relayUrl()); } catch (e) { say('Could not reach the sculpt relay: ' + (e && e.message || e)); return false; } } let nm = o.name; try { nm = nm || (host.userName && host.userName()) || localStorage.getItem('sculptName') || ''; } catch (e) { /* storage */ } collab.start(t, { name: nm }); say('Looking for the others…'); return true; },
     stop() { return collab.stop(); }, get on() { return collab.on; }, get state() { return collab.state; }, get me() { return collab.me; }, people: () => collab.people(), checksum, url: relayUrl,
     get waiting() { return clay.backlog(); }, avatars: () => [...avatars.entries()].map(([id, a]) => ({ id, kind: a.av.kind, look: (a.av.root.getObjectByProperty('isMesh', true) || {}).material && a.av.root.getObjectByProperty('isMesh', true).material.userData.look, av: a.av })), stats: () => Object.assign({ slowMs: +clay.S.slowMs.toFixed(1), slowWhat: clay.S.slowWhat }, snapStats), resetSlow: () => { clay.S.slowMs = 0; }, rounds: () => ({ sums: [...collab.C.sums.entries()], resyncs: collab.C.resyncs || 0 }),
   };
@@ -692,7 +734,7 @@ export function createVrSculpt(THREE, core, host) {
     idle: dt => { if (cfg.on) return; if (collab.on) { clay.tick(4); collab.localFrame([], dt); updateAvatars(dt || 0.016); } else motion.tick(dt || 0.016); },   /* the page calls this every frame while Sculpt is closed, so a work keeps spinning (and, together, the shared work keeps up) */
     assets: () => assets.filter(a => a.object.parent), makeEmblem: o => { if (collab.on && !curCtx) { o = o || {}; collab.act('emblem', [{ height: o.height, spin: o.spin, turn: o.turn, at: emblemAt(o).toArray() }]); return true; } return makeEmblem(o); },
     spin: (obj, T) => { obj = obj || (clay.active && clay.active.work.group); if (!obj) return false; if (collab.on && !curCtx) { const r = refOf(obj); if (!r) return false; collab.act('spin', [r, T || 0]); return true; } return spinNow(obj, T); },
-    joinPieces: pub('join', joinPieces), controls: (role, st, dt) => ctl.input(role, st, dt), controlMap: CONTROL_MAP, selected: () => ctl.selected, openWheel, closeWheel: () => wheel.close(), wheel, gradients: GRADIENT_NAMES, skins: SKIN_NAMES, looks: LOOK_NAMES, paintStops: () => paintStops(cfg), playMotionLocal: playNow, newAsset: pub('newAsset', newAsset), endAsset: pub('endAsset', endAsset), get assetBench() { return !!asset; },
+    joinPieces: pub('join', joinPieces), keepWork: keepWorkNow, openWork: openWorkNow, keptWorks: () => { refreshKept(); return kept; }, forgetWork: id => forgetWork(id).then(refreshKept), controls: (role, st, dt) => ctl.input(role, st, dt), controlMap: CONTROL_MAP, selected: () => ctl.selected, openWheel, closeWheel: () => wheel.close(), wheel, gradients: GRADIENT_NAMES, skins: SKIN_NAMES, looks: LOOK_NAMES, paintStops: () => paintStops(cfg), playMotionLocal: playNow, newAsset: pub('newAsset', newAsset), endAsset: pub('endAsset', endAsset), get assetBench() { return !!asset; },
     icons: ICONS, lessons: LESSONS, tiles: TILES, colors3: CLAY_COLORS, pickedObject: () => { const s = stampSources(); return s ? s.roots[0] : null; },
   };
   vs.menu = makeMenu(vs, { say });
