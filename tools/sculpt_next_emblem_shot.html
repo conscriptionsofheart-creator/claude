@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#fff"><script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script><script type="module">
+const T = await import('/pe_lib/bst_three_0.186.1.module.js'); const { createVrSculpt } = await import('/pe_lib/sculpt_next_engine.js');
+const scene = new T.Scene(); scene.background = new T.Color(0xffffff);
+const vs = createVrSculpt(T, null, { setBench() {}, say() {}, figure: () => null, props: () => [], addObject: o => scene.add(o), removeObject: o => o.parent && o.parent.remove(o), noWorker: true });
+vs.enter(null); const t0 = performance.now(); const e = vs.makeEmblem({ at: new T.Vector3(0, 0, 0), spin: false }); let frames = 0, maxMs = 0; while (!e.ready() && frames < 5000) { const t = performance.now(); vs.frame([], 0.016); maxMs = Math.max(maxMs, performance.now() - t); frames++; } vs.flush();
+const buildMs = performance.now() - t0, st = vs.clay.stats();
+scene.add(new T.HemisphereLight(0xffffff, 0x444466, 0.9)); const d = new T.DirectionalLight(0xffffff, 1.4); d.position.set(0.5, 1, 2); scene.add(d);
+const r = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(600, 600); document.body.appendChild(r.domElement);
+const cam = new T.PerspectiveCamera(30, 1, 0.01, 10); const ang = +(new URLSearchParams(location.search).get('ang') || 0); cam.position.set(Math.sin(ang) * 1.0, 0.05, Math.cos(ang) * 1.0); cam.lookAt(0, 0, 0); r.render(scene, cam);
+window.__result = { buildMs: Math.round(buildMs), frames, maxFrameMs: Math.round(maxMs * 10) / 10, tris: st.tris, layers: st.layers, kB: st.kB };
+</script>

@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#fff"><script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script><script type="module">
+const T = await import('/pe_lib/bst_three_0.186.1.module.js'); const { buildEmblem } = await import('/pe_lib/sculpt_next_emblem.js?' + Date.now());
+const scene = new T.Scene(); scene.background = new T.Color(0xffffff); const t0 = performance.now(), g = buildEmblem(T); const ms = performance.now() - t0; scene.add(g);
+scene.add(new T.HemisphereLight(0xffffff, 0x444466, 1.0)); const d = new T.DirectionalLight(0xffffff, 1.5); d.position.set(0.6, 1, 1.8); scene.add(d); const d2 = new T.DirectionalLight(0xffffff, 0.5); d2.position.set(-1, 0.3, -0.8); scene.add(d2);
+const r = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(600, 600); document.body.appendChild(r.domElement);
+const cam = new T.PerspectiveCamera(30, 1, 0.01, 10), ang = +(new URLSearchParams(location.search).get('ang') || 0); cam.position.set(Math.sin(ang), 0.05, Math.cos(ang)); cam.lookAt(0, 0, 0); r.render(scene, cam);
+let tris = 0; g.traverse(o => { if (o.isMesh) tris += o.geometry.index.count / 3; }); window.__result = { ms: Math.round(ms), tris };
+</script>

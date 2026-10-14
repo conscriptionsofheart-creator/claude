@@ -32,7 +32,7 @@ export function makeExport(THREE, env) {
       let c; if (isClay(r)) { const w = env.clay.works.find(x => x.group === r); c = w ? env.clay.bakedClone(w) : null; } else c = r.clone(true);
       if (!c) return; const M = new M4().multiplyMatrices(back, r.matrixWorld); c.matrix.copy(M); c.matrix.decompose(c.position, c.quaternion, c.scale); c.updateMatrix(); grp.add(c);
     });
-    grp.updateMatrixWorld(true);
+    grp.updateMatrixWorld(true); grp.animations = roots.reduce((a, r) => (isClay(r) || !r.isSkinnedMesh) ? a.concat(r.animations || []) : a, []).filter(c => inPlace.every(r => !(r.animations || []).includes(c)));   /* a work's Spin travels with its copy */
     let thinned = 0, people = 0;
     if (opts.budget > 0) {
       const plain = [], all = []; grp.traverse(o => { if (o.isMesh && o.geometry && o.geometry.attributes.position) { all.push(o); if (o.isSkinnedMesh) people++; else plain.push(o); } });
@@ -57,7 +57,8 @@ export function makeExport(THREE, env) {
     return ExporterP;
   }
   async function toGlb(root) {
-    const E = await exporter(), ex = new E(), o = { binary: true, embedImages: true, onlyVisible: true };
+    const E = await exporter(), ex = new E(), anims = [].concat(root).reduce((a, r) => a.concat((r && r.animations) || []), []), o = { binary: true, embedImages: true, onlyVisible: true };
+    if (anims.length) o.animations = anims;   /* expression moves recorded on the figure travel in the file */
     return new Promise((ok, no) => { try { if (rev >= 132) ex.parse(root, ok, no, o); else ex.parse(root, ok, o); } catch (e) { no(e); } });
   }
   /* the glb of some roots (clay works, objects), with the budget applied to the copy */

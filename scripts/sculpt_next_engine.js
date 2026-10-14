@@ -20,7 +20,10 @@ import { makeFigureBrushes } from './sculpt_next_figure.js';
 import { makeShapes, makeHold } from './sculpt_next_shapes.js';
 import { makeExport } from './sculpt_next_export.js';
 import { makeMenu, ICONS, LESSONS, TILES } from './sculpt_next_ui.js';
-import { createField, opShape, opIntersectField } from './sculpt_next_sdf.js';
+import { makeMotion } from './sculpt_next_motion.js';
+import { buildEmblem } from './sculpt_next_emblem.js';
+import { rodGeometry } from './sculpt_next_rod.js';
+import { createField, opShape, opIntersectField } from './sculpt_next_sdf.js';   /* the synchronous forms, for one-off pinches (stamp) */
 export { makeSculpt };
 export const ENGINE = 'next', ENGINE_VERSION = '2026-10-13';
 
@@ -48,10 +51,15 @@ export function createVrSculpt(THREE, core, host) {
     holdWhat: 'work',     /* Hold moves the whole work, or only the picked layer (with its group) */
     clayOnFigure: 'skin', /* the Clay brush on a figure: build up its skin in a key (skin), or put new clay on it (clay) */
     budget: 0,            /* export: triangle budget for the COPY (0 = keep every triangle); people are never thinned */
+    supportSmooth: true,  /* while one hand sculpts, a pinch with the OTHER hand smooths (Substance keeps Smooth one hold away) */
+    haptics: true,        /* a soft tick in the controller for each dab (cursor.hands[id].pulse, 0..1, the page plays it) */
+    finish: 'satin',      /* the picked clay layer's surface: matte | satin | gloss | metal | glow */
+    pulseDur: 0.6, pulseRepeat: 1,   /* expressions: how long one pulse takes (s), how many times it plays */
+    rodTwist: 180, rodEnd: 'taper',   /* Rod: how far it twists from one end to the other (degrees); its far end tapered to a point or blunt */
   };
   const undoS = [], redoS = [];
   function pushUndo(e) { undoS.push(e); redoS.length = 0; if (undoS.length > 100) undoS.shift(); }
-  const cursor = { hands: {} };
+  const cursor = { hands: {} }, cfgRoot = cfg;
   let figure = null, entered = false, tick = 0, meshFilter = null, current = null, currentOn = false, lastMsg = 0;
   const once = (t, ms) => { const n = Date.now(); if (n - lastMsg > (ms || 2500)) { lastMsg = n; say(t); } };
   const dirty = obj => { if (host.dirty) try { host.dirty(obj); } catch (e) { /* optional */ } };
@@ -69,15 +77,20 @@ export function createVrSculpt(THREE, core, host) {
   function collect(root, any) { const out = []; if (!root) return out; root.traverse(o => { if (o.isMesh && o.geometry && o.geometry.attributes.position && o.geometry.attributes.position.count >= 8 && o.visible && (any ? !/^vr/.test(o.name || '') : (o.isSkinnedMesh && o.skeleton)) && !(o.userData && o.userData._bfx) && !/^_/.test(o.name || '') && !isClayMesh(o)) out.push(o); }); return out; }
   const propMeshes = () => { const out = []; try { ((host.props && host.props()) || []).forEach(r => { if (r && r !== figure && !isClayMesh(r)) collect(r, true).forEach(m => { if (!out.includes(m)) out.push(m); }); }); } catch (e) { /* the host's list is optional */ } return out.filter(m => !(figure && figure.getObjectById(m.id))); };
   const tubeMeshes = () => { const out = []; if (current) current.squeezed().forEach(e => collect(e.object, true).forEach(m => { if (!out.includes(m)) out.push(m); })); return out; };
+  const assets = [];   /* objects this engine made that are not clay: rods, the emblem ({ id, name, object, kind }) */
+  const assetMeshes = () => { const out = []; assets.forEach(a => { if (a.object.parent) a.object.traverse(o => { if (o.isMesh && o.geometry && !/^vr/.test(o.name || '')) out.push(o); }); }); return out; };
   let targetsCache = [];
-  function targets() { const all = collect(figure).concat(propMeshes()); tubeMeshes().forEach(m => { if (!all.includes(m)) all.push(m); }); const ok = all.filter(m => !(m.userData && m.userData.figLocked)); targetsCache = meshFilter ? ok.filter(meshFilter) : ok; return targetsCache; }
+  function targets() { const all = (asset ? [] : collect(figure)).concat(propMeshes()); tubeMeshes().concat(assetMeshes()).forEach(m => { if (!all.includes(m)) all.push(m); }); const ok = all.filter(m => !(m.userData && m.userData.figLocked)); targetsCache = meshFilter ? ok.filter(meshFilter) : ok; return targetsCache; }
 
-  const paintRGB = () => CLAY_COLORS[cfg.tint % CLAY_COLORS.length].map(v => v / 255);
+  const LINEAR = parseInt(THREE.REVISION, 10) >= 152 && !(THREE.ColorManagement && THREE.ColorManagement.enabled === false);
+  const paintRGB = () => CLAY_COLORS[cfg.tint % CLAY_COLORS.length].map(v => { const c = v / 255; return LINEAR ? (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)) : c; });   /* vertex paint on a figure: the same screen colour on either three */
   Object.defineProperty(cfg, 'paintRGB', { get: paintRGB, enumerable: false });
   const fig = makeFigureBrushes(THREE, core, { say, cfg, figure: () => figure, targets: () => targetsCache, pushUndo, dirty, strokeStart, afterEdit: () => { if (current) current.repose(); } });
   const clay = makeClay(THREE, { say, pushUndo, dirty, addObject: o => { try { host.addObject ? host.addObject(o) : null; } catch (e) { /* the host's */ } }, removeObject: o => { try { host.removeObject ? host.removeObject(o) : (o.parent && o.parent.remove(o)); } catch (e) { /* gone */ } }, detail: () => cfg.detail / 1000, color: () => CLAY_COLORS[cfg.tint % CLAY_COLORS.length], noWorker: host.noWorker });
   const exporter = makeExport(THREE, { say, clay });
   const shapes = makeShapes(THREE, { say, cfg, clay, pushUndo, dirty, strokeStart, figure: () => figure, addHelper: o => { try { host.addObject ? host.addObject(o) : null; } catch (e) { /* host */ } }, removeHelper: o => { try { if (o.parent) o.parent.remove(o); } catch (e) { /* gone */ } }, stampMesh: (m, solid, keep) => stampMesh(m, solid, keep), meshNear: (p, r) => meshNear(p, r), color: () => CLAY_COLORS[cfg.tint % CLAY_COLORS.length] });
+  const motion = makeMotion(THREE, { say, targets: () => targetsCache, onChange: (m, light) => { fig.mirrorToShells(m); if (!light) { fig.clear(); if (current) current.repose(); } } });
+  let asset = null; const lastTip = new V3(0, 1.3, -0.6);   /* the story-asset bench: { figVisible } while you make an object apart from the figure */
   const hold = makeHold(THREE, { say, cfg, clay, pushUndo, dirty, props: () => { try { return ((host.props && host.props()) || []).filter(o => o && o !== figure && !(figure && figure.getObjectById(o.id))); } catch (e) { return []; } } });
 
   /* ---------- the bench ---------- */
@@ -90,7 +103,7 @@ export function createVrSculpt(THREE, core, host) {
     else say('Sculpt bench (next engine). Clay builds in the air, Smooth, Flatten, Pinch, Inflate, Grab, Scrape, Smear and Dots shape what you touch; the mode tile says add, subtract, paint or intersect.');
     cfg.on = true; entered = true; return true;
   }
-  function leave() { endAll(); shapes.applyPending(false); try { if (current && current.cfg.on) current.leave(); } catch (e) { /* fine */ } try { host.setBench && host.setBench(false); } catch (e) { /* the bench is the host's */ } cfg.on = false; entered = false; cursor.hands = {}; shapes.hide(); clay.flush(); }
+  function leave() { endAll(); endAsset(true); shapes.applyPending(false); try { if (current && current.cfg.on) current.leave(); } catch (e) { /* fine */ } try { host.setBench && host.setBench(false); } catch (e) { /* the bench is the host's */ } cfg.on = false; entered = false; cursor.hands = {}; shapes.hide(); clay.flush(); }
 
   /* ---------- the stabiliser: the brush point trails the fingertip on a string (Substance's lazy mouse), so a shaky hand still draws a clean line ---------- */
   const lazy = new Map();
@@ -108,65 +121,68 @@ export function createVrSculpt(THREE, core, host) {
   /* ---------- routing: clay or mesh, decided when the pinch starts and kept until it ends ---------- */
   const route = new Map();   /* hand id -> { to: 'clay' | 'mesh' | 'current', st, ... } */
   function meshNear(p, reach) { const h = fig.hitAt(p, Math.max(cfg.size, reach * 100)); return h && h.dWorld <= reach + 1e-6 ? h : null; }
+  /* the settings one stroke keeps from its first frame to its last (a menu tap mid-stroke cannot tear it), with the hand's own twists:
+     the OTHER hand while one hand sculpts smooths (cfg.supportSmooth); hand.alt (a button the page maps) or hand.palmUp (a tracked hand turned palm up) swaps to the partner: add <-> subtract */
+  function strokeCfg(hand) {
+    const c = Object.assign({}, cfg); Object.defineProperty(c, 'paintRGB', { get: paintRGB, enumerable: false });
+    const busy = [...route.entries()].some(([id, r]) => id !== hand.id && (r.st || r.to === 'mesh'));
+    if (busy && cfg.supportSmooth && BRUSHES.has(cfg.mode)) { c.mode = 'smooth'; c.op = 'add'; c.support = true; return c; }
+    if (hand.alt || hand.palmUp) { c.op = ({ add: 'subtract', subtract: 'add', intersect: 'subtract', paint: 'add' })[cfg.op]; if (cfg.mode === 'inflate') c.op = cfg.op === 'subtract' ? 'add' : 'subtract'; c.swapped = true; }
+    return c;
+  }
   function decide(hand) {
     targets();   /* things made since the last look (a tube just squeezed, a prop just pulled in) are brushable at once */
-    const r = cfg.size / 100, ch = clay.hit(hand.tip, r * 1.3 + 0.01, true), mh = (cfg.mode === 'clay' && cfg.clayOnFigure === 'clay') ? null : fig.hitAt(hand.tip, cfg.size);
-    if (ch && (!mh || ch.d <= mh.dWorld)) return { to: 'clay', layer: ch.layer };
-    if (mh) return { to: 'mesh', hit: mh };
-    return { to: cfg.mode === 'clay' || cfg.mode === 'dots' && cfg.op !== 'paint' ? 'air' : 'none' };
+    const c = strokeCfg(hand), r = c.size / 100, ch = clay.hit(hand.tip, r * 1.3 + 0.01, true), mh = (c.mode === 'clay' && c.clayOnFigure === 'clay') ? null : fig.hitAt(hand.tip, c.size);
+    if (ch && (!mh || ch.d <= mh.dWorld)) return { to: 'clay', layer: ch.layer, c };
+    if (mh) return { to: 'mesh', hit: mh, c };
+    return { to: c.mode === 'clay' || c.mode === 'dots' && c.op !== 'paint' ? 'air' : 'none', c };
   }
 
   /* ---------- the clay side of a brush ---------- */
-  function clayOpts(hand, prevTip) {
-    return { mode: cfg.mode, op: cfg.op, radius: cfg.size / 100, strength: cfg.strength / 100, falloff: cfg.falloff, sym: cfg.sym, count: cfg.count, color: CLAY_COLORS[cfg.tint % CLAY_COLORS.length], blend: cfg.blend, profile: cfg.clayProfile, dot: cfg.dot, press: hand.press != null ? 0.25 + 0.75 * Math.max(0, Math.min(1, hand.press)) : 1, dirW: hand.dir || null, deltaW: prevTip ? hand.tip.clone().sub(prevTip) : null };
+  function clayOpts(hand, prevTip, c) {
+    c = c || cfg; return { mode: c.mode, op: c.op, radius: c.size / 100, strength: c.strength / 100, falloff: c.falloff, sym: c.sym, count: c.count, color: CLAY_COLORS[c.tint % CLAY_COLORS.length], blend: c.blend, profile: c.clayProfile, dot: c.dot, press: hand.press != null ? 0.25 + 0.75 * Math.max(0, Math.min(1, hand.press)) : 1, dirW: hand.dir || null, deltaW: prevTip ? hand.tip.clone().sub(prevTip) : null };
   }
   function clayFrame(hand, rt, dt) {
-    const r = cfg.size / 100;
+    const cfg = rt.c || cfgRoot, r = cfg.size / 100;   /* this stroke's own settings */
     if (!rt.st) {
       let L = rt.layer;
       if (!L && clay.active && clay.live(clay.active) && clay.active.group.visible) L = clay.active;   /* a stroke that starts in the air works on the picked layer (a subtract or intersect stroke drawn in from outside) */
       if (!L) { if (cfg.op === 'subtract' || cfg.op === 'paint' || cfg.op === 'intersect') { once(cfg.op === 'paint' ? 'Paint needs clay or a figure under the brush.' : 'There is no clay here to ' + cfg.op + ': switch the mode to add to build some.'); return; } L = clay.ensureLayer(hand.tip, figure); if (!L) return; }
       if (L.locked) { once(L.name + ' is locked: unlock it on the Layers page.'); return; }
       strokeStart(); rt.st = clay.strokeBegin(L, { mode: cfg.mode, op: cfg.op }); rt.last = hand.tip.clone(); rt.prevTip = hand.tip.clone(); rt.t = 1; rt.travel = 0;
-      if (!HOLD_BRUSHES.has(cfg.mode)) { clay.strokeStep(rt.st, hand.tip, hand.tip, clayOpts(hand, null)); }
+      if (!HOLD_BRUSHES.has(cfg.mode)) { clay.strokeStep(rt.st, hand.tip, hand.tip, clayOpts(hand, null, cfg)); rt.pulse = 0.3 + 0.4 * cfg.strength / 100;; }
       return;
     }
     rt.t += dt; const moved = hand.tip.distanceTo(rt.last), spacing = cfg.mode === 'dots' ? r * 1.4 : Math.max(clay.S.active ? clay.S.active.field.h * 0.8 : 0.004, r * 0.25);
-    if (rt.cool > 0) { rt.cool--; return; }   /* the last dab was costly (a big brush on fine clay): skip a frame or two. Nothing is lost: the next dab joins the last point to this one. */
-    const cost = () => { const ms = clay.S.lastDabMs; rt.cool = ms > 6 ? Math.min(3, Math.floor(ms / 6)) : 0; };
-    if (HOLD_BRUSHES.has(cfg.mode)) { if (hand.tip.distanceTo(rt.prevTip) > 1e-4) { clay.strokeStep(rt.st, hand.tip, rt.prevTip, clayOpts(hand, rt.prevTip)); rt.prevTip = hand.tip.clone(); cost(); } return; }
-    if (moved >= spacing || (cfg.mode !== 'dots' && cfg.mode !== 'clay' && rt.t > 0.05)) { clay.strokeStep(rt.st, hand.tip, cfg.mode === 'clay' ? rt.last : hand.tip, clayOpts(hand, rt.last)); rt.last = hand.tip.clone(); rt.t = 0; cost(); }
+    if (clay.backlog() > 12) return;   /* earlier dabs are still being sliced in (a big brush on fine clay, many symmetry copies): wait. Nothing is lost: the next dab joins the last point to this one. */
+    const cost = () => {};
+    if (HOLD_BRUSHES.has(cfg.mode)) { if (hand.tip.distanceTo(rt.prevTip) > 1e-4) { clay.strokeStep(rt.st, hand.tip, rt.prevTip, clayOpts(hand, rt.prevTip, cfg)); rt.prevTip = hand.tip.clone(); cost(); rt.pulse = 0.15 + 0.25 * cfg.strength / 100; } return; }
+    if (moved >= spacing || (cfg.mode !== 'dots' && cfg.mode !== 'clay' && rt.t > 0.05)) { clay.strokeStep(rt.st, hand.tip, cfg.mode === 'clay' ? rt.last : hand.tip, clayOpts(hand, rt.last, cfg)); rt.last = hand.tip.clone(); rt.t = 0; cost(); rt.pulse = 0.2 + 0.4 * cfg.strength / 100; }
   }
-  function clayEnd(rt) { if (rt.st) clay.strokeEnd(rt.st, ({ clay: 'clay', dots: 'dots' })[cfg.mode] || cfg.mode); rt.st = null; }
+  function clayEnd(rt) { const m = (rt.c || cfg).mode; if (rt.st) clay.strokeEnd(rt.st, ({ clay: 'clay', dots: 'dots' })[m] || m); rt.st = null; }
 
   /* ---------- clay versions of the mesh tools: saw, plane cut, carve, erase, stamp ---------- */
   function clayCut(hand, rt) {
     if (!hand.dir) { once('The cut needs the direction your hand points.'); return; }
-    const L = rt.layer, q = new Q().setFromUnitVectors(new V3(0, 1, 0), hand.dir.clone().normalize());
-    if (cfg.cutBlade === 'plane') {   /* the whole side the hand points to goes (or the other side) */
-      if (rt.done) return; rt.done = true; strokeStart(); const Mi = new M4().compose(hand.tip, q, new V3(1, 1, 1)).invert(), toL = new M4().copy(Mi).multiply(L.group.matrixWorld), e = toL.elements, sc = clay.scaleOf(L.group), sign = cfg.cutGoes === 'front' ? 1 : -1;
-      const half = { sample: (x, y, z) => sign * (e[1] * x + e[5] * y + e[9] * z + e[13]) / sc };   /* height above the plane (world metres) in the layer's own units */
-      const snap = new Map(), b = opIntersectField(L.field, half, 0, snap); if (!b) { say('The plane does not cut this clay.'); return; } clay.markAll(L);
-      let state = snap; const flip = () => { state = L.field.restore(state); clay.markAll(L); }; pushUndo({ label: 'cut clay', undo: flip, redo: flip }); dirty(L.work.group); say('Cut ' + L.name + ' along the plane. Undo puts it back.'); return;
+    const L = rt.layer; if (!rt.st) { strokeStart(); rt.st = clay.strokeBegin(L, { mode: 'cut', op: 'subtract' }); rt.n = 0; }
+    if (cfg.cutBlade === 'plane') {   /* the whole side the hand points to goes (or the other side): queued, applied as the pinch ends */
+      if (rt.done) return; rt.done = true; const q = new Q().setFromUnitVectors(new V3(0, 1, 0), hand.dir.clone().normalize()), Mi = new M4().compose(hand.tip, q, new V3(1, 1, 1)).invert(), toL = new M4().copy(Mi).multiply(L.group.matrixWorld), e = toL.elements, sc = clay.scaleOf(L.group), sign = cfg.cutGoes === 'front' ? 1 : -1;
+      clay.halfStep(rt.st, (x, y, z) => sign * (e[1] * x + e[5] * y + e[9] * z + e[13]) / sc); rt.n = 1; return;   /* height above the plane (world metres) in the layer's own units */
     }
     const R = Math.max(0.005, cfg.size / 100), kerf = Math.max(0.004, Math.min(0.012, R * 0.2));   /* the saw: a slab as wide as the Size ring and a few mm thick, swept with the hand; one undo for the sweep */
-    if (rt.last && hand.tip.distanceTo(rt.last) < Math.max(0.004, R * 0.25)) return;
+    if (rt.last && hand.tip.distanceTo(rt.last) < Math.max(0.004, R * 0.25)) return; if (clay.backlog() > 12) return;
     const qs = new Q().setFromUnitVectors(new V3(0, 0, 1), hand.dir.clone().normalize()), M = new M4().compose(hand.tip, qs, new V3(R, R, kerf / 2));
-    if (!rt.snap) { rt.snap = new Map(); strokeStart(); }
-    clay.applyShapeWorld(L, 'cube', M, 'subtract', 0, null, cfg.sym, cfg.count, null, 0, rt.snap); rt.last = hand.tip.clone(); rt.n = (rt.n || 0) + 1;
+    clay.shapeStep(rt.st, 'cube', M, 'subtract', 0, cfg.sym, cfg.count, false); rt.last = hand.tip.clone(); rt.n++;
   }
   function clayBall(hand, rt, dt) {   /* Carve and Erase on clay: a ball that takes clay away as it sweeps; Carve set to keep inside keeps only what the sweep covered */
-    const L = rt.layer, R = cfg.size / 100; rt.t = (rt.t || 1) + dt; if (rt.last && hand.tip.distanceTo(rt.last) < R * 0.3 && rt.t < 0.12) return; rt.t = 0;
-    const M = new M4().compose(hand.tip, new Q(), new V3(R, R, R)); if (!rt.snap) { rt.snap = new Map(); strokeStart(); }
-    if (cfg.mode === 'carve' && cfg.carveKeep === 'inside') { if (!rt.keep) rt.keep = createField({ h: L.field.h, color: L.field.base }); const p = L.group.worldToLocal(hand.tip.clone()), r = R / clay.scaleOf(L.group); opShape(rt.keep, [p.x - r, p.y - r, p.z - r], [p.x + r, p.y + r, p.z + r], (x, y, z) => Math.hypot(x - p.x, y - p.y, z - p.z) - r, 'add', 0, null, null); }
-    else clay.applyShapeWorld(L, 'sphere', M, 'subtract', cfg.blend * R * 0.3, null, cfg.sym, cfg.count, null, 0, rt.snap);
-    rt.last = hand.tip.clone(); rt.n = (rt.n || 0) + 1;
+    const L = rt.layer, R = cfg.size / 100; rt.t = (rt.t || 1) + dt; if (rt.last && hand.tip.distanceTo(rt.last) < R * 0.3 && rt.t < 0.12) return; if (clay.backlog() > 12) return; rt.t = 0;
+    if (!rt.st) { strokeStart(); rt.st = clay.strokeBegin(L, { mode: cfg.mode, op: 'subtract' }); rt.n = 0; }
+    const M = new M4().compose(hand.tip, new Q(), new V3(R, R, R)), keep = cfg.mode === 'carve' && cfg.carveKeep === 'inside';
+    clay.shapeStep(rt.st, 'sphere', M, 'subtract', keep ? 0 : cfg.blend * R * 0.3, cfg.sym, cfg.count, keep); rt.last = hand.tip.clone(); rt.n++;
   }
   function clayToolEnd(rt, label) {
-    const L = rt.layer; if (!L) return;
-    if (rt.keep) { const b = opIntersectField(L.field, rt.keep, 0, rt.snap); if (b) clay.markAll(L); }
-    if (!rt.snap || !rt.snap.size) return; let state = rt.snap; const flip = () => { state = L.field.restore(state); clay.markAll(L); };
-    pushUndo({ label, undo: flip, redo: flip }); dirty(L.work.group); say((label === 'saw clay' ? 'Sawed through ' : label === 'erase clay' ? 'Erased from ' : 'Carved ') + L.name + ' (' + (rt.n || 1) + ' pass' + ((rt.n || 1) === 1 ? '' : 'es') + '). Undo puts it back.');
+    if (!rt.st) return; const L = rt.layer, n = rt.n || 1; clay.strokeEnd(rt.st, label); rt.st = null; dirty(L.work.group);
+    say((label === 'saw clay' ? 'Sawed through ' : label === 'erase clay' ? 'Erased from ' : label === 'cut clay' ? 'Cut ' : 'Carved ') + L.name + (label === 'cut clay' ? ' along the plane' : ' (' + n + ' pass' + (n === 1 ? '' : 'es') + ')') + '. Undo puts it back.');
   }
   /* Stamp: the picked objects press in. Into CLAY: the stamp is turned into clay for a moment and taken away (or kept-only). Into a MESH with clay in the stamp: the clay's triangles make the cutter
      (bst_cut.js stampGeometry, exactly as the current engine's Stamp does it). Anything else is the current engine's own Stamp. */
@@ -220,23 +236,24 @@ export function createVrSculpt(THREE, core, host) {
 
   /* ---------- every XR frame ---------- */
   function frame(hands, dt) {
-    if (!cfg.on) return; dt = dt || 0.016; cursor.hands = {}; fig.frameStart(); tick++;
+    if (!cfg.on) return; dt = dt || 0.016; cursor.hands = {}; fig.frameStart(); tick++; motion.tick(dt);   /* expressions play while you sculpt */
     if (tick % 45 === 0 && !fig.strokes.size && !route.size) targets();   /* pick up objects pulled into the room while the bench is on */
-    const sh = steady(hands || []);
+    const sh = steady(hands || []); if (sh[0]) lastTip.copy(sh[0].tip);
     clay.tick(4);   /* clay chunks that changed: to the worker (or meshed here within 4 ms) */
     if (cfg.mode === 'prim') { shapes.frame(sh, dt, cursor); return; }
+    if (cfg.mode === 'rod') { sh.forEach(h => { rodFrame(h); cursor.hands[h.id] = { tip: h.tip, hit: false, radius: cfg.size / 100, mode: 'rod' }; }); for (const [id, st] of [...rods.entries()]) if (!sh.some(h => h.id === id)) { rods.delete(id); rodEnd(st); } return; }
     shapes.hide();
     if (cfg.mode === 'hold' || (sh.length === 2 && sh.every(h => h.grip))) { hold.frame(sh, dt, cursor); return; }
     if (CURRENT_MODES.has(cfg.mode)) { currentFrame(sh, dt); return; }
     for (const hand of sh) {
       let rt = route.get(hand.id);
-      if (hand.pinch && !rt) { rt = decide(hand); route.set(hand.id, rt); if (rt.to === 'mesh') { if (cfg.op === 'intersect') { once('Intersect works on clay and shapes, not on a figure\'s skin (use Carve set to keep inside).'); rt.to = 'none'; } else fig.begin(hand, rt.hit, cfg); } }
+      if (hand.pinch && !rt) { rt = decide(hand); route.set(hand.id, rt); if (rt.c.support) once('Your other hand smooths while this one sculpts.', 6000); if (rt.to === 'mesh') { if (rt.c.op === 'intersect') { once('Intersect works on clay and shapes, not on a figure\'s skin (use Carve set to keep inside).'); rt.to = 'none'; } else fig.begin(hand, rt.hit, rt.c); } }
       if (!hand.pinch && rt) { if (rt.to === 'mesh') { const s = fig.strokes.get(hand.id); if (s) fig.end(s); } else if (rt.to === 'clay' || rt.to === 'air') clayEnd(rt); route.delete(hand.id); rt = null; }
       let hitNow = false;
-      if (rt && rt.to === 'mesh') { const s = fig.strokes.get(hand.id), h = HOLD_BRUSHES.has(s && s.mode) ? null : fig.hitAt(hand.tip, cfg.size); if (s) fig.step(s, hand, h, dt, cfg); hitNow = !!h || HOLD_BRUSHES.has(s && s.mode); }
+      if (rt && rt.to === 'mesh') { const s = fig.strokes.get(hand.id), h = HOLD_BRUSHES.has(s && s.mode) ? null : fig.hitAt(hand.tip, rt.c.size); if (s && fig.step(s, hand, h, dt, rt.c)) rt.pulse = 0.2 + 0.4 * rt.c.strength / 100; hitNow = !!h || HOLD_BRUSHES.has(s && s.mode); }
       else if (rt && (rt.to === 'clay' || rt.to === 'air')) { clayFrame(hand, rt, dt); hitNow = true; }
       else if (!rt) { const ch = clay.hit(hand.tip, cfg.size / 100 * 1.3, true); hitNow = !!ch || (tick % 3 === 0 ? !!fig.hitAt(hand.tip, cfg.size) : false); }
-      cursor.hands[hand.id] = { tip: hand.tip, hit: hitNow, radius: cfg.size / 100, mode: cfg.mode };
+      const rc = rt && rt.c || cfg; cursor.hands[hand.id] = { tip: hand.tip, hit: hitNow, radius: rc.size / 100, mode: rc.mode, op: rc.op, pulse: cfg.haptics && rt && rt.pulse ? rt.pulse : 0 }; if (rt) rt.pulse = 0;
     }
     for (const [id, rt] of [...route.entries()]) if (!sh.some(h => h.id === id)) { if (rt.to === 'mesh') { const s = fig.strokes.get(id); if (s) fig.end(s); } else clayEnd(rt); route.delete(id); }
   }
@@ -262,6 +279,55 @@ export function createVrSculpt(THREE, core, host) {
     if (currentOn && toCurrent.length) { syncCurrent(); viaCurrent(c => c.frame(toCurrent, dt)); Object.assign(cursor.hands, currentEngine().cursor.hands); }
   }
 
+  /* ---------- the story-asset bench (Ruth 2026-10-13: "create assets for the story also, separate from the bodies"): the figure steps aside, the next clay starts a NEW work of its own,
+     and Save clay puts it in the library as its own object, ready for any scene. ---------- */
+  function newAsset() {
+    endAll(); if (!asset) { asset = { figVisible: figure ? figure.visible : true }; if (figure) figure.visible = false; targets(); }
+    clay.S.forceNew = true; if (cfg.mode !== 'clay' && cfg.mode !== 'prim') cfg.mode = 'clay';
+    say('New asset: the figure steps aside. Pinch in the air to start it; Save clay keeps it as its own object in the library.'); return true;
+  }
+  function endAsset(quiet) { if (!asset) return false; if (figure) figure.visible = asset.figVisible; asset = null; clay.S.forceNew = false; targets(); if (!quiet) say('Back to the figure.'); return true; }
+
+  /* ---------- Ruth's emblem (sculpt_next_emblem.js): built as clay, a layer per part, a few ms a frame; it spins slowly when it is done. One undo takes it away. ---------- */
+  function makeEmblem(opts) {
+    opts = opts || {}; let at = opts.at;
+    if (!at) { at = lastTip.clone(); if (figure) { const b = new THREE.Box3().setFromObject(figure); if (!b.isEmpty()) { const c = b.getCenter(new V3()); at = new V3(c.x + (b.max.x - b.min.x) / 2 + 0.45, c.y + 0.25, c.z); } } }
+    const g = buildEmblem(THREE, { height: opts.height || 0.42 }); g.position.copy(at); g.userData.noMerge = true; g.updateMatrixWorld(true);
+    const ent = { id: 'emblem' + (assets.length + 1), name: 'Emblem', object: g, kind: 'emblem' };
+    const put = () => { try { host.addObject ? host.addObject(g) : null; } catch (e) { /* the host's */ } if (!assets.includes(ent)) assets.push(ent); if (opts.spin !== false) motion.spin(g, opts.turn || 10); targets(); };
+    const take = () => { motion.stopSpin(g); try { host.removeObject ? host.removeObject(g) : (g.parent && g.parent.remove(g)); } catch (e) { /* gone */ } const i = assets.indexOf(ent); if (i >= 0) assets.splice(i, 1); targets(); };
+    put(); pushUndo({ label: 'emblem', undo: take, redo: put }); dirty(g);
+    say('Your emblem is here: two rods, each twisted, bent and tapered, and two heads, turning slowly. Brush it, Hold it, pick it as a stamp, or Save object to keep it.');
+    return { object: g, entry: ent, ready: () => true };
+  }
+
+  /* ---------- Rod (Ruth 2026-10-14: "take a rectangular rod, twist it, and then bend it, and then stretch the end of it and taper it off"): pinch and draw; a solid rectangular rod follows the path,
+     twisted by the Twist setting, its end drawn out and tapered (or blunt). Size sets its width (it is 0.55 as thick), the colour runs from the Colour tile's colour into the next one. One undo per rod. ---------- */
+  const rods = new Map();
+  const rodOpts = (len, c) => { const w = c.size / 100 * 2, A = CLAY_COLORS[c.tint % CLAY_COLORS.length], Bc = CLAY_COLORS[(c.tint + 1) % CLAY_COLORS.length], hx = v => '#' + v.map(x => Math.round(x).toString(16).padStart(2, '0')).join(''), dark = v => v.map(x => x * 0.55);
+    return { width: w, thick: w * 0.55, twist: [[0, 0], [1, c.rodTwist]], taper: c.rodEnd === 'taper' ? [[0, 0.35], [0.12, 1], [0.6, 1], [1, 0.02]] : [[0, 1], [1, 1]], taperThick: c.rodEnd === 'taper' ? [[0, 0.5], [0.15, 1], [0.7, 1], [1, 0.1]] : [[0, 1], [1, 1]], stretch: c.rodEnd === 'taper' ? 0.15 : 0,
+      front: [[0, hx(A)], [1, hx(Bc)]], back: [[0, hx(dark(A))], [1, hx(dark(Bc))]], slices: Math.max(24, Math.min(320, Math.round(len * 400))), around: 32 }; };
+  function rodFrame(hand) {
+    let st = rods.get(hand.id);
+    if (hand.pinch) {
+      if (!st) { const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.04 })); mesh.name = 'Rod ' + (assets.filter(a => a.kind === 'rod').length + 1); mesh.userData.noMerge = true; try { host.addObject ? host.addObject(mesh) : null; } catch (e) { /* host */ } st = { pts: [hand.tip.clone()], mesh, c: Object.assign({}, cfg), n: 0 }; rods.set(hand.id, st); strokeStart(); }
+      const last = st.pts[st.pts.length - 1]; if (hand.tip.distanceTo(last) >= 0.008) { st.pts.push(hand.tip.clone()); if (++st.n % 2 === 0) rodBuild(st, false); }
+    } else if (st) { rods.delete(hand.id); rodEnd(st); }
+  }
+  function rodBuild(st, final) {
+    if (st.pts.length < 2) return; let len = 0; for (let i = 1; i < st.pts.length; i++) len += st.pts[i].distanceTo(st.pts[i - 1]);
+    const o = rodOpts(len, st.c); if (!final) { o.slices = Math.min(o.slices, 120); o.around = 20; }
+    const pts = st.pts.length > 40 ? st.pts.filter((_, i) => i % Math.ceil(st.pts.length / 40) === 0 || i === st.pts.length - 1) : st.pts;
+    const g = rodGeometry(THREE, pts.map(p => [p.x, p.y, p.z]), o); if (st.mesh.geometry) st.mesh.geometry.dispose(); st.mesh.geometry = g;
+  }
+  function rodEnd(st) {
+    if (st.pts.length < 3) { try { host.removeObject ? host.removeObject(st.mesh) : (st.mesh.parent && st.mesh.parent.remove(st.mesh)); } catch (e) { /* gone */ } once('Draw a longer line for a rod.'); return; }
+    rodBuild(st, true); const ent = { id: 'rod' + Date.now(), name: st.mesh.name, object: st.mesh, kind: 'rod' }; assets.push(ent); targets();
+    const take = () => { try { host.removeObject ? host.removeObject(st.mesh) : (st.mesh.parent && st.mesh.parent.remove(st.mesh)); } catch (e) { /* gone */ } const i = assets.indexOf(ent); if (i >= 0) assets.splice(i, 1); targets(); };
+    const put = () => { try { host.addObject ? host.addObject(st.mesh) : null; } catch (e) { /* host */ } if (!assets.includes(ent)) assets.push(ent); targets(); };
+    pushUndo({ label: 'rod', undo: take, redo: put }); dirty(st.mesh); say(st.mesh.name + ': twisted ' + st.c.rodTwist + ' degrees, ' + (st.c.rodEnd === 'taper' ? 'tapered to a point' : 'blunt') + '. Brush it, Hold it, or pick it as a stamp.');
+  }
+
   /* ---------- the menu's calls ---------- */
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
   const set = {
@@ -272,22 +338,25 @@ export function createVrSculpt(THREE, core, host) {
     op: v => { cfg.op = ['add', 'subtract', 'paint', 'intersect'].includes(v) ? v : 'add'; endAll(); }, falloff: v => { cfg.falloff = ['smooth', 'linear', 'sharp', 'flat'].includes(v) ? v : 'smooth'; },
     stabilize: v => { cfg.stabilize = clampN(+v || 0, 0, 1); }, blend: v => { cfg.blend = clampN(+v || 0, 0, 1); }, clayProfile: v => { cfg.clayProfile = v === 'flat' ? 'flat' : 'round'; }, dot: v => { cfg.dot = ['ball', 'ring', 'cube', 'spike'].includes(v) ? v : 'ball'; },
     prim: v => { cfg.prim = ['sphere', 'cube', 'cylinder', 'cone', 'torus', 'capsule'].includes(v) ? v : 'sphere'; shapes.setKind(cfg.prim); }, detail: v => { cfg.detail = clampN(+v || 5, 2, 20); }, tint: v => { cfg.tint = ((v | 0) % CLAY_COLORS.length + CLAY_COLORS.length) % CLAY_COLORS.length; },
-    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, clayOnFigure: v => { cfg.clayOnFigure = v === 'clay' ? 'clay' : 'skin'; }, budget: v => { cfg.budget = Math.max(0, v | 0); },
+    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, rodTwist: v => { cfg.rodTwist = clampN(+v || 0, -720, 720); }, rodEnd: v => { cfg.rodEnd = v === 'blunt' ? 'blunt' : 'taper'; }, supportSmooth: v => { cfg.supportSmooth = !!v; }, haptics: v => { cfg.haptics = !!v; },
+    finish: v => { cfg.finish = ['matte', 'satin', 'gloss', 'metal', 'glow'].includes(v) ? v : 'satin'; if (clay.active) clay.setFinish(clay.active, cfg.finish); }, pulseDur: v => { cfg.pulseDur = clampN(+v || 0.6, 0.2, 4); }, pulseRepeat: v => { cfg.pulseRepeat = clampN(v | 0, 1, 10); }, clayOnFigure: v => { cfg.clayOnFigure = v === 'clay' ? 'clay' : 'skin'; }, budget: v => { cfg.budget = Math.max(0, v | 0); },
   };
   function endAll() {
     for (const [id, rt] of [...route.entries()]) { if (rt.to === 'mesh') { const s = fig.strokes.get(id); if (s) fig.end(s); } else if (rt.to === 'clay' && CURRENT_MODES.has(cfg.mode)) clayToolEnd(rt, 'clay tool'); else if (rt.st) clayEnd(rt); route.delete(id); }
+    for (const [id, st] of [...rods.entries()]) { rods.delete(id); rodEnd(st); }
     fig.endAll(); hold.end(); if (current) viaCurrent(c => c.endAll());
   }
-  function undo() { if (route.size || fig.strokes.size) return false; const c = undoS.pop(); if (!c) return false; c.undo(); redoS.push(c); dirty(); say('Undid ' + c.label + '.'); return true; }
-  function redo() { if (route.size || fig.strokes.size) return false; const c = redoS.pop(); if (!c) return false; c.redo(); undoS.push(c); dirty(); say('Redid ' + c.label + '.'); return true; }
-  function cutAt(hand) { if (clay.works.length) { const ch = clay.hit(hand.tip, 0.25, true); if (ch) { const rt = { to: 'clay', layer: ch.layer }; const was = cfg.cutBlade; clayCut(hand, rt); clayToolEnd(rt, was === 'plane' ? 'cut clay' : 'saw clay'); return true; } } syncCurrent(); if (!currentOn) { try { currentOn = currentEngine().enter(figure); } catch (e) { return false; } } return viaCurrent(c => c.cutAt(hand)); }
-  const squeezed = () => (current ? current.squeezed() : []).concat(clay.works.filter(w => w.group.parent && w.layers.length).map(w => ({ id: w.id, name: w.name, object: w.group, kind: 'clay' })));
-  async function save(name, opts) {
+  function undo() { if (route.size || fig.strokes.size) return false; clay.drainQueue(); const c = undoS.pop(); if (!c) return false; c.undo(); redoS.push(c); dirty(); say('Undid ' + c.label + '.'); return true; }
+  function redo() { if (route.size || fig.strokes.size) return false; clay.drainQueue(); const c = redoS.pop(); if (!c) return false; c.redo(); undoS.push(c); dirty(); say('Redid ' + c.label + '.'); return true; }
+  function cutAt(hand) { if (clay.works.length) { const ch = clay.hit(hand.tip, 0.25, true); if (ch) { const rt = { to: 'clay', layer: ch.layer }; const was = cfg.cutBlade; clayCut(hand, rt); clayToolEnd(rt, was === 'plane' ? 'cut clay' : 'saw clay'); clay.drainQueue(); return true; } } syncCurrent(); if (!currentOn) { try { currentOn = currentEngine().enter(figure); } catch (e) { return false; } } return viaCurrent(c => c.cutAt(hand)); }
+  const squeezed = () => (current ? current.squeezed() : []).concat(assets.filter(a => a.object.parent)).concat(clay.works.filter(w => w.group.parent && w.layers.length).map(w => ({ id: w.id, name: w.name, object: w.group, kind: 'clay' })));
+  async function save(name, opts) { return motion.atRest(() => saveNow(name, opts)); }   /* a turning work is saved as it rests */
+  async function saveNow(name, opts) {
     opts = opts || {}; clay.flush();
     if (!figure && !(opts.roots && opts.roots.length)) { const w = clay.works.filter(x => x.group.parent); if (!w.length) throw new Error('Nothing to save.'); opts = Object.assign({}, opts, { roots: w.map(x => x.group) }); }
     return exporter.save(name, Object.assign({ figure, budget: cfg.budget, sources: host.sources, exportGlb: host.exportGlb }, opts));
   }
-  async function exportGlb(roots, opts) { clay.flush(); return exporter.glb(roots && roots.length ? roots : clay.works.filter(w => w.group.parent).map(w => w.group), Object.assign({ budget: cfg.budget }, opts || {})); }
+  async function exportGlb(roots, opts) { clay.flush(); return motion.atRest(() => exporter.glb(roots && roots.length ? roots : clay.works.filter(w => w.group.parent).map(w => w.group), Object.assign({ budget: cfg.budget }, opts || {}))); }
 
   const vs = {
     cfg, set, enter, leave, frame, undo, redo, strokes: () => undoS.length, canUndo: () => undoS.length > 0, canRedo: () => redoS.length > 0,
@@ -298,6 +367,11 @@ export function createVrSculpt(THREE, core, host) {
     /* new in the next engine */
     engine: ENGINE, version: ENGINE_VERSION, clay, shapes, hold, exportGlb, flush: () => clay.flush(), stats: () => Object.assign(clay.stats(), { undo: undoS.length, redo: redoS.length, targets: targetsCache.length }),
     makeClay: mesh => clay.fromMesh(mesh),   /* a layer, or a Promise of one when the worker voxelizes */ decimate: (g, n) => exporter.decimate(g, n),
+    motion, pulse: (name, o) => { targets(); return motion.pulse(name, Object.assign({ dur: cfg.pulseDur, repeat: cfg.pulseRepeat }, o || {})); },
+    recordMotion: () => { targets(); motion.record(); }, stopMotion: name => { const clip = motion.stop(figure, name); if (clip && figure) { const list = figure.animations; pushUndo({ label: 'expression move', undo: () => { const i = list.indexOf(clip); if (i >= 0) list.splice(i, 1); }, redo: () => { if (!list.includes(clip)) list.push(clip); } }); dirty(figure); } return clip; },
+    idle: dt => { if (!cfg.on) motion.tick(dt || 0.016); },   /* the page calls this every frame while Sculpt is closed, so a work keeps spinning in the room */
+    assets: () => assets.filter(a => a.object.parent), makeEmblem, spin: (obj, T) => { obj = obj || (clay.active && clay.active.work.group); if (!obj) return false; if (T) motion.spin(obj, T); else motion.stopSpin(obj); dirty(obj); return true; },
+    playMotion: clip => motion.play(figure, clip || (figure && figure.animations && figure.animations[figure.animations.length - 1])), newAsset, endAsset, get assetBench() { return !!asset; },
     icons: ICONS, lessons: LESSONS, tiles: TILES, colors3: CLAY_COLORS, pickedObject: () => { const s = stampSources(); return s ? s.roots[0] : null; },
   };
   vs.menu = makeMenu(vs, { say });

@@ -1,0 +1,595 @@
+<title>Emblem in Clay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: one stage (the emblem turning) with a quiet control strip under it; the parts list beside it on wide screens, under it on a phone. One look only: the Atelier's own night purple. */
+:root {
+  --night: #120d1b; --panel: #1d1529; --tile: #2a2036; --line: #3a2e4a; --ink: #f1ebe0; --soft: #b9aec8; --amber: #e8a866; --amber-ink: #20140a;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif; --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--night); color: var(--ink); font: 16px/1.5 var(--body); margin: 0; padding-inline: 16px; padding-block: 20px 28px; box-sizing: border-box; }
+.wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+@media (max-width: 820px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+h1 { font: 700 clamp(28px, 4vw, 40px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.sub { color: var(--soft); margin: 0; max-width: 62ch; }
+.stage { position: relative; background: radial-gradient(120% 90% at 50% 40%, #241a33 0%, var(--night) 70%); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; aspect-ratio: 1 / 1; max-width: 100%; touch-action: none; cursor: grab; }
+.stage:active { cursor: grabbing; }
+canvas { display: block; width: 100%; height: 100%; }
+.progress { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(60%, 320px); display: grid; gap: 10px; text-align: center; color: var(--soft); font-size: 15px; }
+.progress[hidden] { display: none; }
+.bar { height: 6px; border-radius: 3px; background: var(--tile); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .2s linear; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+button { font: 700 15px/1 var(--body); color: var(--ink); background: var(--tile); border: 1px solid var(--line); border-radius: 10px; padding: 11px 16px; cursor: pointer; }
+button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink); border-color: var(--amber); }
+button:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.hint { color: var(--soft); font-size: 14px; margin: 10px 0 0; }
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 16px; min-width: 0; }
+h2 { font: 600 13px/1 var(--body); text-transform: uppercase; letter-spacing: .09em; color: var(--soft); margin: 0; }
+ul.parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+ul.parts li { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 12px; align-items: center; }
+.swatch { height: 14px; border-radius: 7px; }
+.pname { font-size: 15px; }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 15px; }
+dt { color: var(--soft); } dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+.note { color: var(--soft); font-size: 14px; margin: 0; }
+</style>
+<div class="wrap">
+  <header><h1>Your emblem, in clay</h1><p class="sub">Built by the next sculpt engine from your picture: each body is one rectangular rod, painted in a gradient and twisted, so its other face shows where it turns. The heads are spheres. It turns slowly. In the headset it appears beside you with Sculpt &gt; Clay &amp; shapes &gt; Make the emblem.</p></header>
+  <section>
+    <div class="stage" id="stage"><canvas id="c" aria-label="The emblem in 3D, turning"></canvas>
+      <div class="progress" id="progress"><span id="ptext">Shaping the clay…</span><div class="bar"><i id="pbar"></i></div></div></div>
+    <div class="controls">
+      <button id="spin" aria-pressed="true">Spin</button>
+      <button id="speed" aria-pressed="false">Slow turn</button>
+      <button id="front" aria-pressed="false">Face me</button>
+      <button id="detail" aria-pressed="false">Detail: normal</button>
+    </div>
+    <p class="hint">Drag the emblem to turn it yourself. Spin takes about ten seconds a turn and eases in and out; it never flashes.</p>
+  </section>
+  <aside>
+    <h2>Parts (each a clay layer)</h2><p class="note">Rods show two bars: the front face, then the back face that appears where the rod twists.</p>
+    <ul class="parts" id="parts"></ul>
+    <h2>This build</h2>
+    <dl><dt>Triangles</dt><dd id="tris">…</dd><dt>Clay detail</dt><dd id="det">2.5 mm</dd><dt>Build time</dt><dd id="ms">…</dd><dt>Height</dt><dd>42 cm</dd></dl>
+    <p class="note">Same files as the headset (sculpt_next_sdf.js, sculpt_next_mesher.js, sculpt_next_emblem.js), so this is exactly what you will get there. Save clay keeps it in the library as a .glb with the spin as an animation.</p>
+  </aside>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module">
+/* ---- sculpt_next_sdf.js ---- */
+/* sculpt_next_sdf.js: the clay itself (Ruth 2026-10-13: "sculpt objects in VR as well as in Adobe Substance 3D Modeler"). Substance keeps clay as a volume and meshes it on the fly, so you never think about
+   triangles; this is the same idea sized for a Quest in a browser. Pure: no three.js, no page, so it runs in the page and in a Web Worker alike.
+   A FIELD is a signed distance, sampled on a grid of h metres (in the layer's own space): below 0 is inside the clay, above 0 is air. Only a narrow band round the surface is stored, in bricks of 8 x 8 x 8 samples:
+   a missing brick is air, the INSIDE brick is solid clay all through, any other brick holds 512 distances and 512 colours. So a fist-sized lump costs a few hundred kB, not a dense block of megabytes.
+   Every change goes through read() and write(): an operation reads a box of samples, changes them, writes them back. write() can fill a snapshot map first (the bricks as they were), which is the undo of a stroke. */
+const B = 8, B3 = 512;
+const INSIDE = Object.freeze({ inside: true });
+const OFS = 4096, SPAN = 8192;   /* brick coordinates from -4096 to 4095: 262 m of clay at 8 mm, far more than a room */
+const bkey = (bx, by, bz) => ((bx + OFS) * SPAN + (by + OFS)) * SPAN + (bz + OFS);
+const bunkey = k => { const bz = k % SPAN, r = (k - bz) / SPAN, by = r % SPAN, bx = (r - by) / SPAN; return [bx - OFS, by - OFS, bz - OFS]; };
+const floorDiv = (a, b) => Math.floor(a / b);
+
+/* falloff: how much of the brush reaches a point t of the way from the middle (0) to the rim (1). Substance calls it hardness. */
+function falloff(kind) {
+  if (kind === 'linear') return t => (t >= 1 ? 0 : 1 - t);
+  if (kind === 'sharp') return t => { if (t >= 1) return 0; const u = 1 - t; return u * u * u; };
+  if (kind === 'flat') return t => (t >= 1 ? 0 : t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4);
+  return t => { if (t >= 1) return 0; const u = 1 - t * t; return u * u; };   /* 'smooth', the old engine's soft edge */
+}
+/* soft union and soft difference (polynomial smooth min, k = how wide the blend is, in metres) */
+function smin(a, b, k) { if (k <= 0) return a < b ? a : b; const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; }
+function smax(a, b, k) { return -smin(-a, -b, k); }
+
+function createField(opts) {
+  opts = opts || {};
+  const h = opts.h || 0.005, band = opts.band || h * 4, base = opts.color || [214, 196, 170];
+  const f = { h, band, base: base.slice(0, 3), bricks: new Map(), version: 0 };
+  f.newBrick = (fill) => { const d = new Float32Array(B3).fill(fill), c = new Uint8Array(B3 * 3); for (let i = 0; i < B3; i++) { c[i * 3] = f.base[0]; c[i * 3 + 1] = f.base[1]; c[i * 3 + 2] = f.base[2]; } return { d, c }; };
+  /* read a box of nx x ny x nz samples starting at sample (i0, j0, k0); index x + nx * (y + ny * z) */
+  f.read = (i0, j0, k0, nx, ny, nz, into, z0, z1) => {   /* into + z0..z1: fill only those rows of an existing region (a big region is read a slab at a time) */
+    const n = nx * ny * nz, d = into ? into.d : new Float32Array(n), c = into ? into.c : new Uint8Array(n * 3), ka = k0 + (z0 || 0), kb = k0 + (z1 == null ? nz : z1);
+    const bx0 = floorDiv(i0, B), by0 = floorDiv(j0, B), bz0 = floorDiv(ka, B), bx1 = floorDiv(i0 + nx - 1, B), by1 = floorDiv(j0 + ny - 1, B), bz1 = floorDiv(kb - 1, B);
+    const b0 = f.base[0], b1 = f.base[1], b2 = f.base[2];
+    for (let bz = bz0; bz <= bz1; bz++) for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+      const br = f.bricks.get(bkey(bx, by, bz));
+      const xa = Math.max(i0, bx * B), xb = Math.min(i0 + nx, bx * B + B), ya = Math.max(j0, by * B), yb = Math.min(j0 + ny, by * B + B), za = Math.max(ka, bz * B), zb = Math.min(kb, bz * B + B);
+      for (let z = za; z < zb; z++) for (let y = ya; y < yb; y++) {
+        let o = (xa - i0) + nx * ((y - j0) + ny * (z - k0));
+        if (!br || br === INSIDE) { const v = br ? -band : band; for (let x = xa; x < xb; x++, o++) { d[o] = v; c[o * 3] = b0; c[o * 3 + 1] = b1; c[o * 3 + 2] = b2; } continue; }
+        let s = (xa - bx * B) + B * ((y - by * B) + B * (z - bz * B));
+        for (let x = xa; x < xb; x++, o++, s++) { d[o] = br.d[s]; c[o * 3] = br.c[s * 3]; c[o * 3 + 1] = br.c[s * 3 + 1]; c[o * 3 + 2] = br.c[s * 3 + 2]; }
+      }
+    }
+    return into || { d, c, i0, j0, k0, nx, ny, nz };
+  };
+  /* copy a brick's present state into a snapshot map, once per stroke (undefined = air, INSIDE, or a copy) */
+  const snapOne = (snap, k) => { if (!snap || snap.has(k)) return; const br = f.bricks.get(k); snap.set(k, !br || br === INSIDE ? br : { d: br.d.slice(), c: br.c.slice() }); };
+  /* write a region back: bricks that end up all air are dropped, all solid become INSIDE. Returns the number of bricks touched. */
+  f.write = (reg, snap, z0, z1) => {   /* z0..z1: write only those rows (a big region goes back a slab at a time) */
+    const { d, c, i0, j0, nx, ny } = reg, k0 = reg.k0 + (z0 || 0), nz = (z1 == null ? reg.nz : z1) - (z0 || 0), K0 = reg.k0; let touched = 0;
+    const bx0 = floorDiv(i0, B), by0 = floorDiv(j0, B), bz0 = floorDiv(k0, B), bx1 = floorDiv(i0 + nx - 1, B), by1 = floorDiv(j0 + ny - 1, B), bz1 = floorDiv(k0 + nz - 1, B);
+    for (let bz = bz0; bz <= bz1; bz++) for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+      const k = bkey(bx, by, bz); let br = f.bricks.get(k);
+      const xa = Math.max(i0, bx * B), xb = Math.min(i0 + nx, bx * B + B), ya = Math.max(j0, by * B), yb = Math.min(j0 + ny, by * B + B), za = Math.max(k0, bz * B), zb = Math.min(k0 + nz, bz * B + B);
+      if (!br || br === INSIDE) {   /* nothing to do when the region keeps the brick all air (or all solid) */
+        const lim = br ? -band : band; let same = true;
+        for (let z = za; z < zb && same; z++) for (let y = ya; y < yb && same; y++) { let o = (xa - i0) + nx * ((y - j0) + ny * (z - K0)); for (let x = xa; x < xb; x++, o++) { if (br ? d[o] > lim : d[o] < lim) { same = false; break; } if (c[o * 3] !== f.base[0] || c[o * 3 + 1] !== f.base[1] || c[o * 3 + 2] !== f.base[2]) { if (br) { same = false; break; } } } }
+        if (same) continue;
+        snapOne(snap, k); br = f.newBrick(br ? -band : band); f.bricks.set(k, br);
+      } else snapOne(snap, k);
+      touched++;
+      for (let z = za; z < zb; z++) for (let y = ya; y < yb; y++) {
+        let o = (xa - i0) + nx * ((y - j0) + ny * (z - K0)), s = (xa - bx * B) + B * ((y - by * B) + B * (z - bz * B));
+        for (let x = xa; x < xb; x++, o++, s++) { const v = d[o]; br.d[s] = v > band ? band : v < -band ? -band : v; br.c[s * 3] = c[o * 3]; br.c[s * 3 + 1] = c[o * 3 + 1]; br.c[s * 3 + 2] = c[o * 3 + 2]; }
+      }
+      let allOut = true, allIn = true; for (let s = 0; s < B3; s++) { const v = br.d[s]; if (v < band) allOut = false; if (v > -band) allIn = false; if (!allOut && !allIn) break; }
+      if (allOut) f.bricks.delete(k); else if (allIn) f.bricks.set(k, INSIDE);
+    }
+    if (touched) f.version++;
+    return touched;
+  };
+  /* undo: put the snapshot back; returns the snapshot of what was there (redo) and the brick keys (so the caller can remesh them) */
+  f.restore = snap => {
+    const back = new Map(); snap.forEach((v, k) => { snapOne(back, k); if (v === undefined) f.bricks.delete(k); else f.bricks.set(k, v === INSIDE ? INSIDE : { d: v.d.slice(), c: v.c.slice() }); });
+    f.version++; return back;
+  };
+  /* the sample box holding every brick that is not air: [i0, j0, k0, i1, j1, k1] inclusive, or null when empty */
+  f.bounds = () => {
+    if (!f.bricks.size) return null; const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    f.bricks.forEach((_, k) => { const b = bunkey(k); for (let a = 0; a < 3; a++) { if (b[a] < lo[a]) lo[a] = b[a]; if (b[a] > hi[a]) hi[a] = b[a]; } });
+    return [lo[0] * B, lo[1] * B, lo[2] * B, hi[0] * B + B - 1, hi[1] * B + B - 1, hi[2] * B + B - 1];
+  };
+  /* one sample, and a trilinear reading at a point in metres (layer space) */
+  f.at = (i, j, k) => { const br = f.bricks.get(bkey(floorDiv(i, B), floorDiv(j, B), floorDiv(k, B))); if (!br) return band; if (br === INSIDE) return -band; return br.d[(i - floorDiv(i, B) * B) + B * ((j - floorDiv(j, B) * B) + B * (k - floorDiv(k, B) * B))]; };
+  f.sample = (x, y, z) => {
+    const gx = x / h, gy = y / h, gz = z / h, i = Math.floor(gx), j = Math.floor(gy), k = Math.floor(gz), u = gx - i, v = gy - j, w = gz - k;
+    const c00 = f.at(i, j, k) * (1 - u) + f.at(i + 1, j, k) * u, c10 = f.at(i, j + 1, k) * (1 - u) + f.at(i + 1, j + 1, k) * u, c01 = f.at(i, j, k + 1) * (1 - u) + f.at(i + 1, j, k + 1) * u, c11 = f.at(i, j + 1, k + 1) * (1 - u) + f.at(i + 1, j + 1, k + 1) * u;
+    return (c00 * (1 - v) + c10 * v) * (1 - w) + (c01 * (1 - v) + c11 * v) * w;
+  };
+  f.colorAt = (x, y, z) => { const i = Math.round(x / h), j = Math.round(y / h), k = Math.round(z / h), br = f.bricks.get(bkey(floorDiv(i, B), floorDiv(j, B), floorDiv(k, B))); if (!br || br === INSIDE) return f.base; const s = (i - floorDiv(i, B) * B) + B * ((j - floorDiv(j, B) * B) + B * (k - floorDiv(k, B) * B)); return [br.c[s * 3], br.c[s * 3 + 1], br.c[s * 3 + 2]]; };
+  f.gradient = (x, y, z, out) => { const e = h; out = out || [0, 0, 0]; out[0] = f.sample(x + e, y, z) - f.sample(x - e, y, z); out[1] = f.sample(x, y + e, z) - f.sample(x, y - e, z); out[2] = f.sample(x, y, z + e) - f.sample(x, y, z - e); const L = Math.hypot(out[0], out[1], out[2]) || 1; out[0] /= L; out[1] /= L; out[2] /= L; return out; };
+  f.clone = () => { const g = createField({ h, band, color: f.base }); f.bricks.forEach((v, k) => g.bricks.set(k, v === INSIDE ? INSIDE : { d: v.d.slice(), c: v.c.slice() })); return g; };
+  f.bytes = () => { let n = 0; f.bricks.forEach(v => { if (v !== INSIDE) n += B3 * 7; }); return n; };
+  f.empty = () => { for (const v of f.bricks.values()) if (v === INSIDE || v.d.some(x => x < 0)) return false; return true; };
+  return f;
+}
+
+/* ---------- the operations a brush, a shape or a merge does to a field. Each takes the box it may change (in metres, layer space), returns the sample box it changed or null. ---------- */
+const box = (f, lo, hi, pad) => { const h = f.h, p = pad || 0; const i0 = Math.floor(lo[0] / h) - p, j0 = Math.floor(lo[1] / h) - p, k0 = Math.floor(lo[2] / h) - p, i1 = Math.ceil(hi[0] / h) + p, j1 = Math.ceil(hi[1] / h) + p, k1 = Math.ceil(hi[2] / h) + p; return [i0, j0, k0, i1 - i0 + 1, j1 - j0 + 1, k1 - k0 + 1]; };
+const doneBox = r => [r.i0, r.j0, r.k0, r.i0 + r.nx - 1, r.j0 + r.ny - 1, r.k0 + r.nz - 1];
+const MAX_SAMPLES = 900000;   /* about 3.6 MB of distances: a bigger box would stall the frame, so the caller is told no (the brush is too big for this clay's detail) */
+
+/* a shape: dist(x, y, z) is its signed distance in metres; mode 'add' (soft union with blend k), 'subtract', 'intersect' (only inside the box: the caller handles the rest of the layer), 'paint' (colour only, inside the shape).
+   color [r, g, b] is what added clay or paint becomes; amount 0..1 how strongly paint covers. */
+/* in place, brick by brick: a brick the shape cannot reach is never read (the distance is 1-Lipschitz, so the distance at a brick's middle minus half its diagonal bounds every sample in it),
+   and a brick is copied for undo and made solid only when a sample in it really changes. This is the hot path of every clay stroke, shape and saw pass. */
+function drain(g) { let r; do { r = g.next(); } while (!r.done); return r.value; }   /* run a sliced operation to its end, here and now */
+function opShape(...a) { return drain(opShapeGen(...a)); }
+function* opShapeGen(f, lo, hi, dist, mode, k, color, snap, amount) {
+  const pad = Math.ceil((f.band + k) / f.h) + 1, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, pad); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const h = f.h, h2 = h * 2, band = f.band, a = amount == null ? 1 : amount, half = 3.5 * h * Math.sqrt(3), reach = mode === 'paint' ? 0 : band + k, base = f.base;
+  const bx0 = Math.floor(i0 / B), by0 = Math.floor(j0 / B), bz0 = Math.floor(k0 / B), bx1 = Math.floor((i0 + nx - 1) / B), by1 = Math.floor((j0 + ny - 1) / B), bz1 = Math.floor((k0 + nz - 1) / B);
+  let changed = false, ci0 = 1e9, cj0 = 1e9, ck0 = 1e9, ci1 = -1e9, cj1 = -1e9, ck1 = -1e9;
+  for (let bz = bz0; bz <= bz1; bz++) for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+    yield;   /* a pause point between bricks: the frame budget decides whether to go on now or next frame */
+    const dc = dist((bx * B + 3.5) * h, (by * B + 3.5) * h, (bz * B + 3.5) * h); if (dc - half > reach) continue;
+    const key = bkey(bx, by, bz); let br = f.bricks.get(key);
+    if (mode === 'subtract' && !br) continue; if (mode === 'paint' && (!br || br === INSIDE)) continue; if (mode === 'add' && br === INSIDE) continue;
+    const whole = bx * B >= i0 && by * B >= j0 && bz * B >= k0 && bx * B + B <= i0 + nx && by * B + B <= j0 + ny && bz * B + B <= k0 + nz;
+    if (whole && dc + half < -band - k && (mode === 'add' || mode === 'subtract')) {   /* the whole brick lies deep inside the tool: it becomes solid (add) or air (subtract) in one step, no sample by sample */
+      if (snap && !snap.has(key)) snap.set(key, !br || br === INSIDE ? br : { d: br.d.slice(), c: br.c.slice() });
+      if (mode === 'add') f.bricks.set(key, INSIDE); else f.bricks.delete(key); changed = true;
+      if (bx * B < ci0) ci0 = bx * B; if (by * B < cj0) cj0 = by * B; if (bz * B < ck0) ck0 = bz * B; if (bx * B + B - 1 > ci1) ci1 = bx * B + B - 1; if (by * B + B - 1 > cj1) cj1 = by * B + B - 1; if (bz * B + B - 1 > ck1) ck1 = bz * B + B - 1;
+      continue;
+    }
+    let own = false; const fill = br === INSIDE ? -band : band, src = br && br !== INSIDE ? br : null;
+    const xa = Math.max(i0, bx * B), xb = Math.min(i0 + nx, bx * B + B), ya = Math.max(j0, by * B), yb = Math.min(j0 + ny, by * B + B), za = Math.max(k0, bz * B), zb = Math.min(k0 + nz, bz * B + B);
+    for (let z = za; z < zb; z++) for (let y = ya; y < yb; y++) {
+      let s = (xa - bx * B) + B * ((y - by * B) + B * (z - bz * B)); const Y = y * h, Z = z * h;
+      for (let x = xa; x < xb; x++, s++) {
+        const old = src ? src.d[s] : fill, sd = dist(x * h, Y, Z); let nv = old, paint = 0;
+        if (mode === 'paint') { if (sd < 0 && old < band) paint = Math.min(1, a * Math.min(1, -sd / h2)); else continue; }
+        else if (mode === 'add') { if (sd >= old + k || sd > band + k) continue; nv = smin(old, sd, k); if (color && nv < h2 && nv > -h2) paint = sd <= old ? 1 : 1 - (sd - old) / (k + 1e-9); }
+        else if (mode === 'subtract') { if (sd > band + k || old >= band || -sd <= old - k) continue; nv = smax(old, -sd, k); }
+        else if (mode === 'intersect') nv = smax(old, sd, k);
+        if (nv > band) nv = band; else if (nv < -band) nv = -band;
+        if (nv === old && !paint) continue;
+        if (!own) {   /* first real change in this brick: keep the old one for undo, then work on our own copy */
+          if (snap && !snap.has(key)) snap.set(key, !br || br === INSIDE ? br : { d: br.d.slice(), c: br.c.slice() });
+          if (!src) { br = f.newBrick(fill); f.bricks.set(key, br); } own = true;
+        }
+        const tgt = src || br; tgt.d[s] = nv;
+        if (paint) { const o3 = s * 3; tgt.c[o3] = tgt.c[o3] + (color[0] - tgt.c[o3]) * paint + 0.5; tgt.c[o3 + 1] = tgt.c[o3 + 1] + (color[1] - tgt.c[o3 + 1]) * paint + 0.5; tgt.c[o3 + 2] = tgt.c[o3 + 2] + (color[2] - tgt.c[o3 + 2]) * paint + 0.5; }
+      }
+    }
+    if (!own) continue; changed = true; const tgt = f.bricks.get(key);
+    let allOut = true, allIn = true; for (let s = 0; s < B3; s++) { const v = tgt.d[s]; if (v < band) allOut = false; if (v > -band) allIn = false; if (!allOut && !allIn) break; }
+    if (allOut) f.bricks.delete(key); else if (allIn) f.bricks.set(key, INSIDE);
+    if (bx * B < ci0) ci0 = bx * B; if (by * B < cj0) cj0 = by * B; if (bz * B < ck0) ck0 = bz * B; if (bx * B + B - 1 > ci1) ci1 = bx * B + B - 1; if (by * B + B - 1 > cj1) cj1 = by * B + B - 1; if (bz * B + B - 1 > ck1) ck1 = bz * B + B - 1;
+  }
+  void base; if (!changed) return null; f.version++; return [ci0, cj0, ck0, ci1, cj1, ck1];
+}
+function opShapeDense(f, lo, hi, dist, mode, k, color, snap, amount) {   /* the read-change-write version, kept to check the in-place one against */
+  const pad = Math.ceil((f.band + k) / f.h) + 1, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, pad); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, c = r.c, h = f.h, h2 = f.h * 2, band = f.band, a = amount == null ? 1 : amount; let changed = false;
+  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const o = x + nx * (y + ny * z), s = dist((i0 + x) * h, (j0 + y) * h, (k0 + z) * h), old = d[o];
+    if (mode === 'paint') { if (s < 0 && old < band) { const w = Math.min(1, a * Math.min(1, -s / (h * 2))); for (let q = 0; q < 3; q++) c[o * 3 + q] = Math.round(c[o * 3 + q] + (color[q] - c[o * 3 + q]) * w); changed = true; } continue; }
+    let nv = old;
+    if (mode === 'add') {
+      if (s >= old + k || s > band + k) continue;   /* the stroke changes nothing here (smooth min gives the old value back) */
+      nv = smin(old, s, k);
+      if (color && nv < h2 && nv > -h2) { const w = s <= old ? 1 : 1 - (s - old) / (k + 1e-9); const o3 = o * 3; c[o3] = c[o3] + (color[0] - c[o3]) * w + 0.5; c[o3 + 1] = c[o3 + 1] + (color[1] - c[o3 + 1]) * w + 0.5; c[o3 + 2] = c[o3 + 2] + (color[2] - c[o3 + 2]) * w + 0.5; }   /* only the skin of the clay shows its colour, so only samples near the new surface take it */
+    }
+    else if (mode === 'subtract') { if (s > band + k || old >= band || -s <= old - k) continue; nv = smax(old, -s, k); }
+    else if (mode === 'intersect') nv = smax(old, s, k);
+    if (nv !== old) { d[o] = nv; changed = true; }
+  }
+  if (!changed) return null; f.write(r, snap); return doneBox(r);
+}
+/* intersect across the WHOLE layer: everything outside the shape goes (a temp field holds the shape: a stroke or a primitive). k = blend. */
+function opIntersectField(...a) { return drain(opIntersectFieldGen(...a)); }
+function* opIntersectFieldGen(f, g, k, snap, gMap) {
+  const bb = f.bounds(); if (!bb) return null; const h = f.h, [i0, j0, k0] = bb, nx = bb[3] - i0 + 1, ny = bb[4] - j0 + 1, nz = bb[5] - k0 + 1;
+  const out = []; for (let bz = Math.floor(k0 / B); bz <= Math.floor(bb[5] / B); bz++) for (let by = Math.floor(j0 / B); by <= Math.floor(bb[4] / B); by++) for (let bx = Math.floor(i0 / B); bx <= Math.floor(bb[3] / B); bx++) {
+    if (!f.bricks.has(bkey(bx, by, bz))) continue; yield;
+    const r = f.read(bx * B, by * B, bz * B, B, B, B); let ch = false;
+    for (let z = 0; z < B; z++) for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) { const o = x + B * (y + B * z), p = gMap ? gMap((bx * B + x) * h, (by * B + y) * h, (bz * B + z) * h) : [(bx * B + x) * h, (by * B + y) * h, (bz * B + z) * h], s = g.sample(p[0], p[1], p[2]), nv = smax(r.d[o], s, k); if (nv !== r.d[o]) { r.d[o] = nv; ch = true; } }
+    if (ch) { f.write(r, snap); out.push(1); }
+  }
+  void nx; void ny; void nz; return out.length ? bb : null;
+}
+/* the read-change-write operations, sliced: the box is read a slab at a time, changed a row at a time, written back a slab at a time, with pause points between, and computed from an untouched
+   copy, so slicing never changes the result. */
+function* readSlabs(f, i0, j0, k0, nx, ny, nz) { const r = { d: new Float32Array(nx * ny * nz), c: new Uint8Array(nx * ny * nz * 3), i0, j0, k0, nx, ny, nz }; for (let z = 0; z < nz; z += 4) { f.read(i0, j0, k0, nx, ny, nz, r, z, Math.min(nz, z + 4)); yield; } return r; }
+function* writeSlabs(f, r, snap) { for (let z = 0; z < r.nz; z += 4) { f.write(r, snap, z, Math.min(r.nz, z + 4)); yield; } }
+/* Inflate (amount > 0 grows the clay out, < 0 shrinks it in) inside a ball */
+function opOffset(...a) { return drain(opOffsetGen(...a)); }
+function* opOffsetGen(f, c, rad, amount, fall, snap) {
+  const [i0, j0, k0, nx, ny, nz] = box(f, [c[0] - rad, c[1] - rad, c[2] - rad], [c[0] + rad, c[1] + rad, c[2] + rad], 1); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, h = f.h, band = f.band; let ch = false;
+  for (let z = 0; z < nz; z++) { yield; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const o = x + nx * (y + ny * z), old = d[o]; if (old >= band && amount < 0) continue; if (old <= -band && amount > 0) continue; const dx = (i0 + x) * h - c[0], dy = (j0 + y) * h - c[1], dz = (k0 + z) * h - c[2], w = fall(Math.sqrt(dx * dx + dy * dy + dz * dz) / rad); if (w <= 0) continue; d[o] = old - amount * w; ch = true; } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
+}
+/* Smooth: each sample moves toward the mean of its six neighbours (the surface relaxes), strongest in the middle of the ball */
+function opSmooth(...a) { return drain(opSmoothGen(...a)); }
+function* opSmoothGen(f, c, rad, s, fall, snap) {
+  const [i0, j0, k0, nx, ny, nz] = box(f, [c[0] - rad, c[1] - rad, c[2] - rad], [c[0] + rad, c[1] + rad, c[2] + rad], 2); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, src = d.slice(), h = f.h, band = f.band; let ch = false;
+  for (let z = 1; z < nz - 1; z++) { yield; for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) {
+    const o = x + nx * (y + ny * z), old = src[o]; if (old >= band || old <= -band) { if (!(Math.abs(src[o + 1]) < band || Math.abs(src[o - 1]) < band || Math.abs(src[o + nx]) < band || Math.abs(src[o - nx]) < band || Math.abs(src[o + nx * ny]) < band || Math.abs(src[o - nx * ny]) < band)) continue; }
+    const dx = (i0 + x) * h - c[0], dy = (j0 + y) * h - c[1], dz = (k0 + z) * h - c[2], w = fall(Math.sqrt(dx * dx + dy * dy + dz * dz) / rad) * s; if (w <= 0) continue;
+    const m = (src[o + 1] + src[o - 1] + src[o + nx] + src[o - nx] + src[o + nx * ny] + src[o - nx * ny]) / 6; d[o] = old + (m - old) * Math.min(1, w); if (d[o] !== old) ch = true;
+  } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
+}
+/* the surface plane under the brush: the mean place and mean outward direction of the samples near the surface inside the ball; null when no surface is there */
+function surfacePlane(f, c, rad) {
+  const [i0, j0, k0, nx, ny, nz] = box(f, [c[0] - rad, c[1] - rad, c[2] - rad], [c[0] + rad, c[1] + rad, c[2] + rad], 1); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, h = f.h; let W = 0; const p = [0, 0, 0], n = [0, 0, 0];
+  for (let z = 1; z < nz - 1; z++) for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) {
+    const o = x + nx * (y + ny * z), v = d[o]; if (Math.abs(v) > h) continue; const X = (i0 + x) * h, Y = (j0 + y) * h, Z = (k0 + z) * h, dx = X - c[0], dy = Y - c[1], dz = Z - c[2], t = Math.sqrt(dx * dx + dy * dy + dz * dz) / rad; if (t >= 1) continue;
+    const w = 1 - t; W += w; p[0] += (X) * w; p[1] += (Y) * w; p[2] += (Z) * w;
+    const gx = d[o + 1] - d[o - 1], gy = d[o + nx] - d[o - nx], gz = d[o + nx * ny] - d[o - nx * ny], L = Math.hypot(gx, gy, gz) || 1; n[0] += gx / L * w; n[1] += gy / L * w; n[2] += gz / L * w;
+  }
+  if (W <= 0) return null; const L = Math.hypot(n[0], n[1], n[2]) || 1;
+  return { p: [p[0] / W, p[1] / W, p[2] / W], n: [n[0] / L, n[1] / L, n[2] / L], weight: W };
+}
+/* Flatten, Scrape and Fill: the clay inside the ball moves toward the plane (Scrape only takes away what stands above it, Fill only fills what lies below) */
+function opPlane(...a) { return drain(opPlaneGen(...a)); }
+function* opPlaneGen(f, c, rad, plane, s, kind, fall, snap) {
+  const [i0, j0, k0, nx, ny, nz] = box(f, [c[0] - rad, c[1] - rad, c[2] - rad], [c[0] + rad, c[1] + rad, c[2] + rad], 1); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, h = f.h, band = f.band, P = plane.p, N = plane.n; let ch = false;
+  for (let z = 0; z < nz; z++) { yield; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const o = x + nx * (y + ny * z), old = d[o], X = (i0 + x) * h, Y = (j0 + y) * h, Z = (k0 + z) * h, dx = X - c[0], dy = Y - c[1], dz = Z - c[2], w = fall(Math.sqrt(dx * dx + dy * dy + dz * dz) / rad) * s; if (w <= 0) continue;
+    const pd = (X - P[0]) * N[0] + (Y - P[1]) * N[1] + (Z - P[2]) * N[2];   /* the plane's own signed distance: above the plane is air */
+    let goal = pd; if (kind === 'scrape') goal = Math.max(old, pd); else if (kind === 'fill') goal = Math.min(old, pd);
+    if (Math.abs(goal) > band && Math.abs(old) >= band) continue;
+    const nv = old + (goal - old) * Math.min(1, w); if (nv !== old) { d[o] = nv; ch = true; }
+  } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
+}
+/* a warp: the clay at each point comes from p - disp(p) (Grab, Smear, Pinch, Melt). disp returns [dx, dy, dz] in metres or null. The box must hold every point that moves AND where it comes from. */
+function opWarp(...a) { return drain(opWarpGen(...a)); }
+function* opWarpGen(f, lo, hi, reach, disp, snap) {
+  const padC = Math.ceil(reach / f.h) + 2, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, padC); if (nx * ny * nz > MAX_SAMPLES) return null;
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, c = r.c, src = d.slice(), csrc = c.slice(), h = f.h; let ch = false;
+  const tri = (gx, gy, gz) => {   /* trilinear from the copy, clamped to the box */
+    gx = Math.max(0, Math.min(nx - 1.001, gx)); gy = Math.max(0, Math.min(ny - 1.001, gy)); gz = Math.max(0, Math.min(nz - 1.001, gz));
+    const x = Math.floor(gx), y = Math.floor(gy), z = Math.floor(gz), u = gx - x, v = gy - y, w = gz - z, o = x + nx * (y + ny * z), sx = 1, sy = nx, sz = nx * ny;
+    const c00 = src[o] * (1 - u) + src[o + sx] * u, c10 = src[o + sy] * (1 - u) + src[o + sy + sx] * u, c01 = src[o + sz] * (1 - u) + src[o + sz + sx] * u, c11 = src[o + sz + sy] * (1 - u) + src[o + sz + sy + sx] * u;
+    return [(c00 * (1 - v) + c10 * v) * (1 - w) + (c01 * (1 - v) + c11 * v) * w, Math.round(gx) + nx * (Math.round(gy) + ny * Math.round(gz))];
+  };
+  for (let z = 0; z < nz; z++) { yield; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const X = (i0 + x) * h, Y = (j0 + y) * h, Z = (k0 + z) * h, m = disp(X, Y, Z); if (!m) continue; const L2 = m[0] * m[0] + m[1] * m[1] + m[2] * m[2]; if (L2 < 1e-14) continue;
+    const o = x + nx * (y + ny * z), [v, co] = tri(x - m[0] / h, y - m[1] / h, z - m[2] / h); if (v === src[o]) continue; d[o] = v; c[o * 3] = csrc[co * 3]; c[o * 3 + 1] = csrc[co * 3 + 1]; c[o * 3 + 2] = csrc[co * 3 + 2]; ch = true;
+  } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
+}
+/* field g (in its own space) into f: gMap(x, y, z) turns a point of f's space into g's; mode as opShape. Used by Merge down, by booleans between layers and by Remesh (into an empty field). */
+function opMergeField(f, g, gMap, mode, k, snap, lo, hi) {
+  if (mode === 'intersect') return opIntersectField(f, g, k, snap, gMap);
+  const pad = Math.ceil((f.band + k) / f.h) + 1, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, pad); if (nx * ny * nz > MAX_SAMPLES * 4) return null;   /* a merge happens once, not every frame, so it may take a bigger box */
+  const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, c = r.c, h = f.h, band = f.band; let ch = false;
+  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const o = x + nx * (y + ny * z), p = gMap((i0 + x) * h, (j0 + y) * h, (k0 + z) * h), s = g.sample(p[0], p[1], p[2]), old = d[o];
+    if (mode === 'paint') { if (s < 0 && old < band) { const gc = g.colorAt(p[0], p[1], p[2]); c[o * 3] = gc[0]; c[o * 3 + 1] = gc[1]; c[o * 3 + 2] = gc[2]; ch = true; } continue; }
+    if (s >= band && mode === 'add') continue;
+    const nv = mode === 'subtract' ? smax(old, -s, k) : smin(old, s, k);
+    if (mode === 'add' && s < old + h) { const gc = g.colorAt(p[0], p[1], p[2]); c[o * 3] = gc[0]; c[o * 3 + 1] = gc[1]; c[o * 3 + 2] = gc[2]; ch = true; }
+    if (nv !== old) { d[o] = nv; ch = true; }
+  }
+  if (!ch) return null; f.write(r, snap); return doneBox(r);
+}
+
+/* ---------- the shapes (signed distances in their own unit space; the caller scales and turns them) ---------- */
+const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z), len2 = (x, y) => Math.sqrt(x * x + y * y);
+const PRIMS = ['sphere', 'cube', 'cylinder', 'cone', 'torus', 'capsule'];
+/* each shape fills about a unit ball (half-size 0.5 to 1); rounding r rounds the edges of the cube and the cylinder */
+function sdPrim(kind, x, y, z, round) {
+  const rr = round || 0;
+  if (kind === 'cube') { const qx = Math.abs(x) - (1 - rr), qy = Math.abs(y) - (1 - rr), qz = Math.abs(z) - (1 - rr); return len3(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - rr; }
+  if (kind === 'cylinder') { const dx = len2(x, z) - (1 - rr), dy = Math.abs(y) - (1 - rr); return Math.min(Math.max(dx, dy), 0) + len2(Math.max(dx, 0), Math.max(dy, 0)) - rr; }
+  if (kind === 'cone') {   /* point up, base radius 1 at y = -1, tip at y = 1 (exact cone distance) */
+    const q = len2(x, z), hy = y + 1, H = 2, R = 1; const ax = R, ay = -H; const wx = q, wy = hy - H;   /* tip at (0, H) in (q, hy) */
+    const t = Math.max(0, Math.min(1, (wx * ax + wy * ay) / (ax * ax + ay * ay))), bx = wx - ax * t, by = wy - ay * t, cx = wx - ax * Math.max(0, Math.min(1, wx / ax)), cy = wy + H;
+    const k = Math.sign(ay), dd = Math.min(bx * bx + by * by, cx * cx + cy * cy), s = Math.max(k * (wx * ay - wy * ax), k * (wy + H)); return Math.sqrt(dd) * Math.sign(s);
+  }
+  if (kind === 'torus') { const q = len2(x, z) - 0.7; return len2(q, y) - 0.3; }
+  if (kind === 'capsule') { const yy = Math.max(-0.5, Math.min(0.5, y)); return len3(x, y - yy, z) - 0.5; }
+  return len3(x, y, z) - 1;   /* sphere */
+}
+/* a capsule from a to b with radius r (a clay stroke between two dabs); flat > 0 squashes it along n into a ribbon */
+function sdCapsule(x, y, z, a, b, r, n, flat) {
+  const bax = b[0] - a[0], bay = b[1] - a[1], baz = b[2] - a[2], pax = x - a[0], pay = y - a[1], paz = z - a[2], L2 = bax * bax + bay * bay + baz * baz;
+  const t = L2 > 0 ? Math.max(0, Math.min(1, (pax * bax + pay * bay + paz * baz) / L2)) : 0; let dx = pax - bax * t, dy = pay - bay * t, dz = paz - baz * t;
+  if (flat && n) { const k = dx * n[0] + dy * n[1] + dz * n[2], s = 1 / (1 - flat * 0.75); dx += n[0] * k * (s - 1); dy += n[1] * k * (s - 1); dz += n[2] * k * (s - 1); return (len3(dx, dy, dz) - r) / s; }   /* stretched along n by s, so the ribbon is r * (1 - 0.75 flat) thick; dividing by s keeps it a safe distance */
+  return len3(dx, dy, dz) - r;
+}
+
+/* signed distances near a closed triangle soup (Make clay, a stamp pressed into clay): the distance to the nearest triangle, the sign from a ray count along x (odd = inside). Bounded: refuses more than 4 M samples. */
+function voxelizeTris(tris, h, band, base) {
+    const f = { base }, lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9]; tris.forEach(t => { for (let k = 0; k < 9; k++) { const a = k % 3; if (t[k] < lo[a]) lo[a] = t[k]; if (t[k] > hi[a]) hi[a] = t[k]; } });
+    const i0 = Math.floor(lo[0] / h) - 5, j0 = Math.floor(lo[1] / h) - 5, k0 = Math.floor(lo[2] / h) - 5, nx = Math.ceil(hi[0] / h) + 5 - i0 + 1, ny = Math.ceil(hi[1] / h) + 5 - j0 + 1, nz = Math.ceil(hi[2] / h) + 5 - k0 + 1;
+    if (nx * ny * nz > 4e6) return null;
+    const d = new Float32Array(nx * ny * nz).fill(band), c = new Uint8Array(nx * ny * nz * 3); for (let i = 0; i < nx * ny * nz; i++) { c[i * 3] = f.base[0]; c[i * 3 + 1] = f.base[1]; c[i * 3 + 2] = f.base[2]; }
+    /* unsigned distance in the band: each triangle writes to the samples round it */
+    const cp = new Float64Array(3);
+    for (const t of tris) {
+      const a0 = Math.floor((Math.min(t[0], t[3], t[6]) - band) / h) - i0, a1 = Math.ceil((Math.max(t[0], t[3], t[6]) + band) / h) - i0, b0 = Math.floor((Math.min(t[1], t[4], t[7]) - band) / h) - j0, b1 = Math.ceil((Math.max(t[1], t[4], t[7]) + band) / h) - j0, c0 = Math.floor((Math.min(t[2], t[5], t[8]) - band) / h) - k0, c1 = Math.ceil((Math.max(t[2], t[5], t[8]) + band) / h) - k0;
+      for (let z = Math.max(0, c0); z <= Math.min(nz - 1, c1); z++) for (let y = Math.max(0, b0); y <= Math.min(ny - 1, b1); y++) for (let x = Math.max(0, a0); x <= Math.min(nx - 1, a1); x++) {
+        const px = (i0 + x) * h, py = (j0 + y) * h, pz = (k0 + z) * h; closestOnTri(px, py, pz, t, cp); const dd = Math.hypot(px - cp[0], py - cp[1], pz - cp[2]), o = x + nx * (y + ny * z); if (dd < d[o]) d[o] = dd;
+      }
+    }
+    /* the sign: a ray along +x from each row; crossings toggle inside */
+    const rows = new Map(); tris.forEach((t, ti) => { const y0 = Math.floor(Math.min(t[1], t[4], t[7]) / h) - j0, y1 = Math.ceil(Math.max(t[1], t[4], t[7]) / h) - j0, z0 = Math.floor(Math.min(t[2], t[5], t[8]) / h) - k0, z1 = Math.ceil(Math.max(t[2], t[5], t[8]) / h) - k0; for (let z = Math.max(0, z0); z <= Math.min(nz - 1, z1); z++) for (let y = Math.max(0, y0); y <= Math.min(ny - 1, y1); y++) { const k = y + ny * z; let l = rows.get(k); if (!l) { l = []; rows.set(k, l); } l.push(ti); } });
+    rows.forEach((list, k) => {
+      const y = k % ny, z = (k - y) / ny, py = (j0 + y) * h + h * 1e-3, pz = (k0 + z) * h + h * 7e-4, xs = [];
+      for (const ti of list) { const t = tris[ti], ay = t[1], az = t[2], by = t[4], bz = t[5], cy = t[7], cz = t[8], dd = (by - ay) * (cz - az) - (cy - ay) * (bz - az); if (Math.abs(dd) < 1e-18) continue; const w1 = ((py - ay) * (cz - az) - (cy - ay) * (pz - az)) / dd, w2 = ((by - ay) * (pz - az) - (py - ay) * (bz - az)) / dd; if (w1 < 0 || w2 < 0 || w1 + w2 > 1) continue; xs.push(t[0] + w1 * (t[3] - t[0]) + w2 * (t[6] - t[0])); }
+      if (xs.length < 2) return; xs.sort((p, q) => p - q);
+      for (let x = 0; x < nx; x++) { const px = (i0 + x) * h; let n = 0; for (const xx of xs) { if (xx < px) n++; else break; } if (n % 2 === 1) { const o = x + nx * (y + ny * z); d[o] = -d[o]; } }
+    });
+    return { d, c, i0, j0, k0, nx, ny, nz };
+  }
+function closestOnTri(px, py, pz, t, out) {   /* the closest point of triangle t (9 numbers) to p (Ericson, Real-Time Collision Detection 5.1.5) */
+    const ax = t[0], ay = t[1], az = t[2], abx = t[3] - ax, aby = t[4] - ay, abz = t[5] - az, acx = t[6] - ax, acy = t[7] - ay, acz = t[8] - az, apx = px - ax, apy = py - ay, apz = pz - az;
+    const d1 = abx * apx + aby * apy + abz * apz, d2 = acx * apx + acy * apy + acz * apz; if (d1 <= 0 && d2 <= 0) { out[0] = ax; out[1] = ay; out[2] = az; return; }
+    const bpx = px - t[3], bpy = py - t[4], bpz = pz - t[5], d3 = abx * bpx + aby * bpy + abz * bpz, d4 = acx * bpx + acy * bpy + acz * bpz; if (d3 >= 0 && d4 <= d3) { out[0] = t[3]; out[1] = t[4]; out[2] = t[5]; return; }
+    const vc = d1 * d4 - d3 * d2; if (vc <= 0 && d1 >= 0 && d3 <= 0) { const v = d1 / (d1 - d3); out[0] = ax + abx * v; out[1] = ay + aby * v; out[2] = az + abz * v; return; }
+    const cpx = px - t[6], cpy = py - t[7], cpz = pz - t[8], d5 = abx * cpx + aby * cpy + abz * cpz, d6 = acx * cpx + acy * cpy + acz * cpz; if (d6 >= 0 && d5 <= d6) { out[0] = t[6]; out[1] = t[7]; out[2] = t[8]; return; }
+    const vb = d5 * d2 - d1 * d6; if (vb <= 0 && d2 >= 0 && d6 <= 0) { const w = d2 / (d2 - d6); out[0] = ax + acx * w; out[1] = ay + acy * w; out[2] = az + acz * w; return; }
+    const va = d3 * d6 - d5 * d4; if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) { const w = (d4 - d3) / ((d4 - d3) + (d5 - d6)); out[0] = t[3] + (t[6] - t[3]) * w; out[1] = t[4] + (t[7] - t[4]) * w; out[2] = t[5] + (t[8] - t[5]) * w; return; }
+    const den = 1 / (va + vb + vc), v = vb * den, w = vc * den; out[0] = ax + abx * v + acx * w; out[1] = ay + aby * v + acy * w; out[2] = az + abz * v + acz * w;
+  }
+
+/* ---- sculpt_next_mesher.js ---- */
+/* sculpt_next_mesher.js: turns a box of clay samples into triangles (Surface Nets: one point per grid cell the surface passes through, four cells round every crossed edge make a quad).
+   Pure typed arrays, no three.js, so the page and the Web Worker (sculpt_next_worker.js) run the same code.
+   A CHUNK is N x N x N cells. meshChunk gets the samples from one before the chunk to one after it (N + 2 per side), so it can build the points of the cells along its lower faces too: the neighbour chunk
+   builds the same points from the same samples, so the pieces meet with no cracks. A chunk owns the edges that START inside it, so no quad is made twice.
+   Out: positions (metres, layer space), normals (from the field's slope, so they match across chunks), colours (0..1) and a triangle index. */
+function meshChunk(d, c, n, i0, j0, k0, h) {
+  const nc = n - 1, nn = n * n, cellVert = new Int32Array(nc * nc * nc).fill(-1);
+  let cap = 1024, P = new Float32Array(cap * 3), Nn = new Float32Array(cap * 3), C = new Float32Array(cap * 3), nv = 0;
+  const grow = () => { cap *= 2; const p2 = new Float32Array(cap * 3), n2 = new Float32Array(cap * 3), c2 = new Float32Array(cap * 3); p2.set(P); n2.set(Nn); c2.set(C); P = p2; Nn = n2; C = c2; };
+  const corner = [0, 1, n, n + 1, nn, nn + 1, nn + n, nn + n + 1], cx = [0, 1, 0, 1, 0, 1, 0, 1], cy = [0, 0, 1, 1, 0, 0, 1, 1], cz = [0, 0, 0, 0, 1, 1, 1, 1];
+  const EA = [0, 2, 4, 6, 0, 1, 4, 5, 0, 1, 2, 3], EB = [1, 3, 5, 7, 2, 3, 6, 7, 4, 5, 6, 7];   /* the 12 cell edges as corner pairs */
+  const v = new Float32Array(8);
+  for (let z = 0; z < nc; z++) for (let y = 0; y < nc; y++) for (let x = 0; x < nc; x++) {
+    const o = x + n * (y + n * z); let mask = 0;
+    for (let q = 0; q < 8; q++) { v[q] = d[o + corner[q]]; if (v[q] < 0) mask |= 1 << q; }
+    if (mask === 0 || mask === 255) continue;
+    let sx = 0, sy = 0, sz = 0, cnt = 0;
+    for (let e = 0; e < 12; e++) { const a = EA[e], b = EB[e], va = v[a], vb = v[b]; if ((va < 0) === (vb < 0)) continue; const t = va / (va - vb); sx += cx[a] + (cx[b] - cx[a]) * t; sy += cy[a] + (cy[b] - cy[a]) * t; sz += cz[a] + (cz[b] - cz[a]) * t; cnt++; }
+    if (nv >= cap) grow();
+    P[nv * 3] = (i0 + x + sx / cnt) * h; P[nv * 3 + 1] = (j0 + y + sy / cnt) * h; P[nv * 3 + 2] = (k0 + z + sz / cnt) * h;
+    const gx = (v[1] + v[3] + v[5] + v[7]) - (v[0] + v[2] + v[4] + v[6]), gy = (v[2] + v[3] + v[6] + v[7]) - (v[0] + v[1] + v[4] + v[5]), gz = (v[4] + v[5] + v[6] + v[7]) - (v[0] + v[1] + v[2] + v[3]), L = Math.hypot(gx, gy, gz) || 1;
+    Nn[nv * 3] = gx / L; Nn[nv * 3 + 1] = gy / L; Nn[nv * 3 + 2] = gz / L;
+    let W = 0, r = 0, g = 0, bb = 0; for (let q = 0; q < 8; q++) { const w = 1 / (Math.abs(v[q]) + h * 0.05), s = (o + corner[q]) * 3; W += w; r += c[s] * w; g += c[s + 1] * w; bb += c[s + 2] * w; }
+    C[nv * 3] = r / W / 255; C[nv * 3 + 1] = g / W / 255; C[nv * 3 + 2] = bb / W / 255;
+    cellVert[x + nc * (y + nc * z)] = nv++;
+  }
+  let icap = 4096, I = new Uint32Array(icap), ni = 0;
+  const cell = (x, y, z) => cellVert[x + nc * (y + nc * z)];
+  const quad = (a, b, c2, e, flip) => {
+    if (a < 0 || b < 0 || c2 < 0 || e < 0) return; if (ni + 6 > icap) { icap *= 2; const i2 = new Uint32Array(icap); i2.set(I); I = i2; }
+    const d02 = (P[a * 3] - P[c2 * 3]) ** 2 + (P[a * 3 + 1] - P[c2 * 3 + 1]) ** 2 + (P[a * 3 + 2] - P[c2 * 3 + 2]) ** 2, d13 = (P[b * 3] - P[e * 3]) ** 2 + (P[b * 3 + 1] - P[e * 3 + 1]) ** 2 + (P[b * 3 + 2] - P[e * 3 + 2]) ** 2;
+    let t; if (d02 <= d13) t = [a, b, c2, a, c2, e]; else t = [a, b, e, b, c2, e];   /* split the quad along its shorter diagonal */
+    if (flip) { I[ni++] = t[0]; I[ni++] = t[2]; I[ni++] = t[1]; I[ni++] = t[3]; I[ni++] = t[5]; I[ni++] = t[4]; }
+    else for (let q = 0; q < 6; q++) I[ni++] = t[q];
+  };
+  for (let z = 1; z < n - 1; z++) for (let y = 1; y < n - 1; y++) for (let x = 1; x < n - 1; x++) {
+    const o = x + n * (y + n * z), a = d[o] < 0;
+    if (a !== (d[o + 1] < 0)) quad(cell(x, y - 1, z - 1), cell(x, y, z - 1), cell(x, y, z), cell(x, y - 1, z), !a);
+    if (a !== (d[o + n] < 0)) quad(cell(x - 1, y, z - 1), cell(x - 1, y, z), cell(x, y, z), cell(x, y, z - 1), !a);
+    if (a !== (d[o + nn] < 0)) quad(cell(x - 1, y - 1, z), cell(x, y - 1, z), cell(x, y, z), cell(x - 1, y, z), !a);
+  }
+  return { position: P.slice(0, nv * 3), normal: Nn.slice(0, nv * 3), color: C.slice(0, nv * 3), index: I.slice(0, ni), verts: nv, tris: ni / 3 };
+}
+
+/* ---- sculpt_next_emblem.js ---- */
+/* sculpt_next_emblem.js: Ruth's emblem in three dimensions (Ruth 2026-10-13: "the first thing I want to do is be able to create this in 3dimension with all the gradient and rich colors on it, and
+   animate it to spin"). Two figures: the blue one rising, its arm sweeping up from royal blue through violet and magenta to a red-orange tip, a lavender fold inside; the orange one turning toward it, from
+   deep purple through crimson to gold and back to orange, a dark plum fold in front; a head above each (indigo to violet, red to gold).
+   Built as CLAY, with the same engine as the brushes: each part is its own layer (so Ruth can pick one and keep sculpting it); each body is one rectangular rod swept along a path traced from her picture,
+   moving in depth too, and twisted on its own length, so its two faces (front gradient, back fold colours) show where it turns. Pure (no three.js, no page), so the headset and the preview page build the same thing.
+   buildEmblemGen({ height, h }) is a sliced job (a generator: the engine runs it a few ms a frame, so the headset never stalls) that returns [{ name, field, centre }]. */
+
+
+/* the picture's own coordinates (1250 x 1250, y down). Each body is ONE ROD (Ruth: "a cube stretched into a rectangular rod that is then painted in a gradient and twisted"): a rectangular bar, about
+   four times as wide as it is thick, swept along a path that also moves in depth (z, picture pixels toward you), turning on its own length (twist, degrees; 0 = its front face toward you, 180 = its back,
+   90 = edge on). The front face carries the main gradient, the back face the fold colours, so the lavender and plum folds appear exactly where the rod turns. width: the bar's width along it (0..1 of wide). */
+const EMBLEM = {
+  parts: [
+    { name: 'Blue figure', kind: 'rod', wide: 215, thick: 44,
+      pts: [[585, 1218, 0], [452, 1112, -40], [322, 966, -70], [244, 806, -60], [252, 648, -10], [334, 528, 40], [458, 444, 60], [590, 370, 50], [712, 286, 25], [808, 182, 8], [890, 62, 0]],
+      twist: [[0, 95], [0.1, 160], [0.3, 175], [0.42, 100], [0.52, 20], [0.75, 0], [0.92, 15], [1, 70]], width: [[0, 0.3], [0.2, 0.95], [0.35, 1], [0.6, 0.8], [0.85, 0.5], [1, 0.25]],
+      front: [[0, '#140b78'], [0.25, '#170d8c'], [0.45, '#2a1fd4'], [0.6, '#4a2cff'], [0.72, '#6a28f2'], [0.82, '#9620c8'], [0.9, '#cf2a8c'], [1, '#ff4a2a']],
+      back: [[0, '#2a18e0'], [0.2, '#5a46ff'], [0.4, '#8b7cff'], [0.55, '#6c5cf6'], [1, '#4a2cff']], edge: ['#0d0860', 0.3] },
+    { name: 'Blue head', kind: 'ball', z: 40, c: [565, 237], r: 80, stops: [[0, '#21149a'], [0.5, '#4a2cff'], [1, '#8a3cff']], dir: [0.7, 0.7] },
+    { name: 'Orange figure', kind: 'rod', wide: 245, thick: 46,
+      pts: [[595, 470, 0], [700, 514, 20], [818, 584, 45], [910, 680, 50], [936, 784, 20], [888, 894, -30], [790, 984, -60], [700, 1080, -50], [664, 1170, -15], [665, 1228, 0]],
+      twist: [[0, 80], [0.1, 20], [0.3, 0], [0.5, 10], [0.6, 80], [0.72, 165], [0.88, 175], [1, 100]], width: [[0, 0.3], [0.2, 0.85], [0.4, 1], [0.6, 0.95], [0.8, 0.7], [1, 0.3]],
+      front: [[0, '#3a0a5a'], [0.12, '#6a1060'], [0.25, '#c03848'], [0.38, '#ff8a1e'], [0.5, '#ffab14'], [0.62, '#ff7a1e'], [0.8, '#ff5424'], [1, '#ff9a12']],
+      back: [[0, '#2a0650'], [0.55, '#2a0650'], [0.7, '#5a0a66'], [0.82, '#a03050'], [0.92, '#ff7a20'], [1, '#ffa018']], edge: ['#ff3a22', 0.25] },
+    { name: 'Orange head', kind: 'ball', z: 40, c: [872, 460], r: 75, stops: [[0, '#ff2424'], [0.5, '#ff5a20'], [1, '#ffb41a']], dir: [0.7, 0.7] },
+  ],
+};
+const hex = s => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
+function gradient(stops, t) {   /* colour at t (0..1) through the stops */
+  t = Math.max(0, Math.min(1, t)); for (let i = 0; i < stops.length - 1; i++) { const [ta, ca] = stops[i], [tb, cb] = stops[i + 1]; if (t <= tb) { const u = (t - ta) / (tb - ta || 1), A = hex(ca), B = hex(cb); return [A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u, A[2] + (B[2] - A[2]) * u]; } }
+  return hex(stops[stops.length - 1][1]);
+}
+/* Catmull-Rom through the traced points, resampled to n even steps: [x, y, z] in metres (picture centre at 0, y up, z toward you) */
+function curve(pts, n, s) {
+  const P = pts.map(p => [(p[0] - 625) * s, (640 - p[1]) * s, (p[2] || 0) * s]), out = [], seg = P.length - 1;
+  const at = (i, u) => { const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[Math.min(seg, i + 1)], p3 = P[Math.min(seg, i + 2)], u2 = u * u, u3 = u2 * u; return [0, 1, 2].map(k => 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * u + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * u2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * u3)); };
+  const dense = []; for (let i = 0; i < seg; i++) for (let k = 0; k < 20; k++) dense.push(at(i, k / 20)); dense.push(P[seg]);
+  const len = [0]; for (let i = 1; i < dense.length; i++) len.push(len[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1], dense[i][2] - dense[i - 1][2]));
+  const L = len[len.length - 1]; let j = 0; for (let k = 0; k <= n; k++) { const want = L * k / n; while (j < len.length - 2 && len[j + 1] < want) j++; const u = (want - len[j]) / ((len[j + 1] - len[j]) || 1), a = dense[j], b = dense[j + 1]; out.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u]); }
+  return out;
+}
+const stopVal = (stops, t) => { t = Math.max(0, Math.min(1, t)); for (let i = 0; i < stops.length - 1; i++) { const [ta, va] = stops[i], [tb, vb] = stops[i + 1]; if (t <= tb) { const u = (t - ta) / (tb - ta || 1), e = u * u * (3 - 2 * u); return va + (vb - va) * e; } } return stops[stops.length - 1][1]; };
+/* the rod's frame at each step: T along it, N its broad face's normal (turned by the twist round T, starting from facing you), W across its width */
+function rodFrames(C, twist) {
+  const n = C.length, F = [];
+  for (let i = 0; i < n; i++) {
+    const a = C[Math.max(0, i - 1)], b = C[Math.min(n - 1, i + 1)]; let T = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; const L = Math.hypot(...T) || 1; T = T.map(v => v / L);
+    let N0 = [0, 0, 1]; const d = N0[0] * T[0] + N0[1] * T[1] + N0[2] * T[2]; N0 = [N0[0] - T[0] * d, N0[1] - T[1] * d, N0[2] - T[2] * d]; const l0 = Math.hypot(...N0) || 1; N0 = N0.map(v => v / l0);
+    const W0 = [T[1] * N0[2] - T[2] * N0[1], T[2] * N0[0] - T[0] * N0[2], T[0] * N0[1] - T[1] * N0[0]], th = stopVal(twist, i / (n - 1)) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    const N = [N0[0] * c + W0[0] * sn, N0[1] * c + W0[1] * sn, N0[2] * c + W0[2] * sn], W = [T[1] * N[2] - T[2] * N[1], T[2] * N[0] - T[0] * N[2], T[0] * N[1] - T[1] * N[0]];
+    F.push({ c: C[i], T, N, W });
+  }
+  return F;
+}
+const sdRoundBox = (qx, qy, qz, hx, hy, hz, r) => { const dx = Math.abs(qx) - hx + r, dy = Math.abs(qy) - hy + r, dz = Math.abs(qz) - hz + r; return Math.hypot(Math.max(dx, 0), Math.max(dy, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dy, dz), 0) - r; };
+/* the whole build, sliced: yields between bricks; returns the parts as fields in the emblem's own space (metres, centred, y up, z toward you) */
+function* buildEmblemGen(opts) {
+  opts = opts || {}; const height = opts.height || 0.42, h = opts.h || 0.0025, s = height / 1180, out = [];
+  for (const part of EMBLEM.parts) {
+    if (part.kind === 'ball') {
+      const f = createField({ h, color: gradient(part.stops, 0.5).map(Math.round) }), c = [(part.c[0] - 625) * s, (640 - part.c[1]) * s, (part.z || 0) * s], r = part.r * s;
+      yield* opShapeGen(f, [c[0] - r, c[1] - r, c[2] - r], [c[0] + r, c[1] + r, c[2] + r], (x, y, z) => Math.hypot(x - c[0], y - c[1], z - c[2]) - r, 'add', 0, null, null);
+      yield* recolorGen(f, (x, y) => { const t = 0.5 + 0.5 * (((x - c[0]) * part.dir[0] + (y - c[1]) * part.dir[1]) / r); return gradient(part.stops, t); });
+      out.push({ name: part.name, field: f, centre: c }); continue;
+    }
+    /* the rod: a rectangle swept along the path. Each sample is measured against the cross-section at its own place along the path (frame, width and twist blended between steps), so the faces are
+       smooth and the long edges stay crisp (slightly rounded), with flat ends; neighbouring steps share their cross-sections exactly, so the pieces meet with no seam. */
+    const f = createField({ h, color: gradient(part.front, 0.5).map(Math.round) }), C = curve(part.pts, 150, s), F = rodFrames(C, part.twist), ht = part.thick * s / 2, n = F.length, rr = Math.min(ht * 0.4, h * 2);
+    const HW = F.map((_, i) => Math.max(ht * 1.2, part.wide * s / 2 * stopVal(part.width, i / (n - 1))));
+    const rect = (a, b, hx, hy) => { const dx = Math.abs(a) - hx + rr, dy = Math.abs(b) - hy + rr; return Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0) - rr; };
+    for (let i = 0; i < n - 1; i++) {
+      const A = F[i], Bf = F[i + 1], ax = A.c[0], ay = A.c[1], az = A.c[2], ex = Bf.c[0] - ax, ey = Bf.c[1] - ay, ez = Bf.c[2] - az, L2 = ex * ex + ey * ey + ez * ez || 1e-12, L = Math.sqrt(L2), first = i === 0, last = i === n - 2;
+      const R = Math.max(HW[i], HW[i + 1]) + ht + L;
+      yield* opShapeGen(f, [Math.min(ax, Bf.c[0]) - R, Math.min(ay, Bf.c[1]) - R, Math.min(az, Bf.c[2]) - R], [Math.max(ax, Bf.c[0]) + R, Math.max(ay, Bf.c[1]) + R, Math.max(az, Bf.c[2]) + R], (x, y, z) => {
+        const px = x - ax, py = y - ay, pz = z - az, raw = (px * ex + py * ey + pz * ez) / L2, u = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+        const cx = px - ex * u, cy = py - ey * u, cz = pz - ez * u;
+        let Wx = A.W[0] + (Bf.W[0] - A.W[0]) * u, Wy = A.W[1] + (Bf.W[1] - A.W[1]) * u, Wz = A.W[2] + (Bf.W[2] - A.W[2]) * u; const wl = Math.hypot(Wx, Wy, Wz) || 1; Wx /= wl; Wy /= wl; Wz /= wl;
+        let Nx = A.N[0] + (Bf.N[0] - A.N[0]) * u, Ny = A.N[1] + (Bf.N[1] - A.N[1]) * u, Nz = A.N[2] + (Bf.N[2] - A.N[2]) * u; const nd = Nx * Wx + Ny * Wy + Nz * Wz; Nx -= Wx * nd; Ny -= Wy * nd; Nz -= Wz * nd; const nl = Math.hypot(Nx, Ny, Nz) || 1; Nx /= nl; Ny /= nl; Nz /= nl;
+        const d = rect(cx * Wx + cy * Wy + cz * Wz, cx * Nx + cy * Ny + cz * Nz, HW[i] + (HW[i + 1] - HW[i]) * u, ht);
+        const m0 = first ? 0 : 0.5, m1 = last ? 0 : 0.5, over = raw < -m0 ? (-raw - m0) * L : raw > 1 + m1 ? (raw - 1 - m1) * L : 0;   /* each piece reaches half a step past its ends (so bends close with no gap) and no further; the rod's two real ends are flat */
+        return 0.8 * (over > 0 ? (d > 0 ? Math.hypot(d, over) : over) : d);   /* a little short of the true distance, so the engine's skipping of far bricks can never skip a piece of surface */
+      }, 'add', 0, null, null);
+    }
+    /* paint: front face by the front gradient, back face by the back one, along the rod; the long edges lean a little toward the edge colour */
+    const edge = hex(part.edge[0]), ek = part.edge[1];
+    yield* recolorGenXYZ(f, (x, y, z) => {
+      let bi = 0, bd = 1e9; for (let i = 0; i < n; i += 2) { const c = F[i].c, d = (c[0] - x) ** 2 + (c[1] - y) ** 2 + (c[2] - z) ** 2; if (d < bd) { bd = d; bi = i; } }
+      for (let i = Math.max(0, bi - 2); i <= Math.min(n - 1, bi + 2); i++) { const c = F[i].c, d = (c[0] - x) ** 2 + (c[1] - y) ** 2 + (c[2] - z) ** 2; if (d < bd) { bd = d; bi = i; } }
+      const { c, N, W } = F[bi], t = bi / (n - 1), px = x - c[0], py = y - c[1], pz = z - c[2], side = px * N[0] + py * N[1] + pz * N[2], across = Math.abs(px * W[0] + py * W[1] + pz * W[2]) / Math.max(h, part.wide * s / 2 * stopVal(part.width, t));
+      const col = gradient(side >= 0 ? part.front : part.back, t), m = ek * Math.min(1, across) ** 3; return [col[0] + (edge[0] - col[0]) * m, col[1] + (edge[1] - col[1]) * m, col[2] + (edge[2] - col[2]) * m];
+    });
+    out.push({ name: part.name, field: f, centre: C[Math.floor(n / 2)] });
+  }
+  return out;
+}
+/* paint every sample near the surface by a colour function of its place (x, y, z metres) */
+function* recolorGenXYZ(f, col) {
+  const h = f.h, B = 8; for (const [k, br] of f.bricks) {
+    if (br.inside) continue; yield; const bz = k % 8192, r1 = (k - bz) / 8192, by = r1 % 8192, bx = (r1 - by) / 8192, ox = (bx - 4096) * B, oy = (by - 4096) * B, oz = (bz - 4096) * B;
+    for (let z = 0; z < B; z++) for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) { const s = x + B * (y + B * z); if (Math.abs(br.d[s]) > h * 2.5) continue; const c = col((ox + x) * h, (oy + y) * h, (oz + z) * h); br.c[s * 3] = c[0]; br.c[s * 3 + 1] = c[1]; br.c[s * 3 + 2] = c[2]; }
+  }
+}
+/* paint every sample near the surface by a colour function of its place (x, y metres) */
+function* recolorGen(f, col) {
+  const h = f.h, B = 8; for (const [k, br] of f.bricks) {
+    if (br.inside) continue; yield; const bz = k % 8192, r1 = (k - bz) / 8192, by = r1 % 8192, bx = (r1 - by) / 8192, ox = (bx - 4096) * B, oy = (by - 4096) * B;
+    for (let z = 0; z < B; z++) for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) { const s = x + B * (y + B * z); if (Math.abs(br.d[s]) > h * 2.5) continue; const c = col((ox + x) * h, (oy + y) * h); br.c[s * 3] = c[0]; br.c[s * 3 + 1] = c[1]; br.c[s * 3 + 2] = c[2]; }
+  }
+}
+
+/* ---- the page ---- */
+const T = window.THREE, cv = document.getElementById('c'), stage = document.getElementById('stage');
+const renderer = new T.WebGLRenderer({ canvas: cv, antialias: true, alpha: true }); renderer.setClearColor(0x000000, 0);   /* the stage's own night-purple glow shows through */ renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+const scene = new T.Scene(), cam = new T.PerspectiveCamera(30, 1, 0.01, 10); cam.position.set(0, 0.02, 1.0); cam.lookAt(0, 0, 0);
+scene.add(new T.HemisphereLight(0xffffff, 0x3a2e4a, 0.95)); const key = new T.DirectionalLight(0xffffff, 0.95); key.position.set(0.6, 1, 1.6); scene.add(key); const rim = new T.DirectionalLight(0xe8a866, 0.45); rim.position.set(-1, 0.4, -1); scene.add(rim);
+const turn = new T.Group(); scene.add(turn);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let spinOn = !reduce, T_TURN = 10, k = spinOn ? 0 : 0, yaw = 0, pitch = 0, dragging = null, detail = 2.5;
+const size = () => { const r = stage.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); cam.aspect = r.width / r.height; cam.updateProjectionMatrix(); };
+new ResizeObserver(size).observe(stage); size();
+const btn = id => document.getElementById(id);
+const setPressed = (b, on) => b.setAttribute('aria-pressed', on ? 'true' : 'false');
+setPressed(btn('spin'), spinOn); if (reduce) document.querySelector('.hint').textContent = 'Your device asks for less motion, so the spin starts off. Tap Spin to turn it on, or drag the emblem to turn it yourself.';
+btn('spin').onclick = () => { spinOn = !spinOn; setPressed(btn('spin'), spinOn); };
+btn('speed').onclick = () => { T_TURN = T_TURN === 10 ? 18 : 10; setPressed(btn('speed'), T_TURN === 18); };
+btn('front').onclick = () => { yaw = 0; pitch = 0; spinOn = false; setPressed(btn('spin'), false); };
+btn('detail').onclick = () => { detail = detail === 2.5 ? 4 : detail === 4 ? 1.8 : 2.5; btn('detail').textContent = 'Detail: ' + ({ 2.5: 'normal', 4: 'light', 1.8: 'fine' })[detail]; build(); };
+stage.addEventListener('pointerdown', e => { dragging = { x: e.clientX, y: e.clientY, yaw, pitch }; stage.setPointerCapture(e.pointerId); });
+stage.addEventListener('pointermove', e => { if (!dragging) return; yaw = dragging.yaw + (e.clientX - dragging.x) * 0.01; pitch = Math.max(-0.6, Math.min(0.6, dragging.pitch + (e.clientY - dragging.y) * 0.006)); });
+stage.addEventListener('pointerup', () => { dragging = null; });
+/* the parts list, from the engine's own colour stops */
+const css = stops => 'linear-gradient(90deg,' + stops.map(([t, c]) => c + ' ' + Math.round(t * 100) + '%').join(',') + ')';
+document.getElementById('parts').innerHTML = EMBLEM.parts.map(p => '<li><span style="display:grid;gap:4px"><span class="swatch" style="background:' + css(p.front || p.stops) + '"></span>' + (p.back ? '<span class="swatch" style="background:' + css(p.back) + '"></span>' : '') + '</span><span class="pname">' + p.name + (p.kind === 'rod' ? ' (twisted rod)' : ' (sphere)') + '</span></li>').join('');
+/* build: the engine's sliced generator, a few ms a frame, then mesh each part in chunks as the headset does */
+let buildId = 0;
+async function build() {
+  const id = ++buildId; document.getElementById('progress').hidden = false; document.getElementById('det').textContent = detail + ' mm';
+  while (turn.children.length) { const m = turn.children.pop(); m.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  const t0 = performance.now(), g = buildEmblemGen({ height: 0.42, h: detail / 1000 }); let r, steps = 0;
+  do { const tf = performance.now(); do { r = g.next(); steps++; } while (!r.done && performance.now() - tf < 12); document.getElementById('pbar').style.width = Math.min(92, steps / (detail >= 4 ? 110 : detail >= 2.5 ? 330 : 900)) + '%'; await new Promise(q => requestAnimationFrame(q)); if (id !== buildId) return; } while (!r.done);
+  document.getElementById('ptext').textContent = 'Turning clay into triangles…'; await new Promise(q => requestAnimationFrame(q));
+  let tris = 0; const N = 16;
+  for (const part of r.value) {
+    const f = part.field, bb = f.bounds(); if (!bb) continue; const grp = new T.Group(), mat = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.02 });
+    for (let cz = Math.ceil((bb[2] - N) / N); cz <= Math.floor((bb[5] + 1) / N); cz++) for (let cy = Math.ceil((bb[1] - N) / N); cy <= Math.floor((bb[4] + 1) / N); cy++) for (let cx = Math.ceil((bb[0] - N) / N); cx <= Math.floor((bb[3] + 1) / N); cx++) {
+      const rd = f.read(cx * N - 1, cy * N - 1, cz * N - 1, N + 2, N + 2, N + 2), m = meshChunk(rd.d, rd.c, N + 2, cx * N - 1, cy * N - 1, cz * N - 1, f.h); if (!m.tris) continue;
+      const geo = new T.BufferGeometry(); geo.setAttribute('position', new T.BufferAttribute(m.position, 3)); geo.setAttribute('normal', new T.BufferAttribute(m.normal, 3)); geo.setAttribute('color', new T.BufferAttribute(m.color, 3)); geo.setIndex(new T.BufferAttribute(m.index, 1)); grp.add(new T.Mesh(geo, mat)); tris += m.tris;
+    }
+    turn.add(grp);
+  }
+  document.getElementById('tris').textContent = tris.toLocaleString('en-US'); document.getElementById('ms').textContent = (performance.now() - t0 < 1000 ? Math.round(performance.now() - t0) + ' ms' : ((performance.now() - t0) / 1000).toFixed(1) + ' s');
+  document.getElementById('pbar').style.width = '100%'; document.getElementById('progress').hidden = true;
+}
+let last = performance.now(), angle = 0;
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  k = Math.max(0, Math.min(1, k + (spinOn && !dragging ? dt : -dt) / 1.2)); angle += dt * k * Math.PI * 2 / T_TURN;
+  turn.rotation.set(pitch, angle + yaw, 0); renderer.render(scene, cam); requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop); build();
+</script>

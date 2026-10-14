@@ -1,7 +1,7 @@
 /* sculpt_next_ui.js: the next engine's wrist-menu pages, in the Atelier's own look (the page draws them: picture tiles from vr_core.js's ICONS, the same row objects { label, ic, on, act } as its own
    Sculpt pages), the new picture-tile icons (24 x 24 line drawings in the same style as vr_core.js's, merged into ICONS by the page; a name that already exists there is left alone), and one lesson step
    per tool (Ruth: "every visible tool gets a one-step lesson"). Nothing here flashes or moves by itself.
-   Pages: 10 CLAY (the brushes and their settings), 11 SHAPES (primitives, gizmo, booleans, Make clay, Hold), 12 LAYERS (layer list, groups, merge, remesh, save). */
+   Pages: 10 CLAY (the brushes and their settings), 11 SHAPES (primitives, gizmo, booleans, Make clay, Hold), 12 LAYERS (layer list, groups, merge, remesh, save), 13 EXPRESSIONS (shape keys that move). */
 export const ICONS = {
   clayIc: '<path d="M4 17c2-6 5-9 8-9s5 2 5 5-2 5-5 5H6"/><path d="M14 6c1-2 3-3 5-2"/>',
   flattenIc: '<path d="M3 15h18"/><path d="M5 11c2-3 4-3 7-3s5 0 7 3"/><path d="M12 4v4M10 6l2 2 2-2"/>',
@@ -43,6 +43,21 @@ export const ICONS = {
   detailIc: '<circle cx="10" cy="10" r="6"/><path d="M14.5 14.5 20 20"/><path d="M8 10h4M10 8v4"/>',
   budgetIc: '<path d="M4 18 12 5l8 13z"/><path d="M8 12h8" stroke-dasharray="2 2"/>',
   layerPickIc: '<path d="M12 3 3 8l9 5 9-5z"/><path d="M3 13l9 5 9-5" stroke-dasharray="2 2.5"/>',
+  assetIc: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12v9M12 12l8-4.5M12 12 4 7.5"/><path d="M17 3v4M15 5h4"/>',
+  backFigureIc: '<circle cx="12" cy="5" r="2"/><path d="M12 7v7M7 10h10M12 14l-3 6M12 14l3 6"/><path d="M3 12l2-2M3 12l2 2"/>',
+  finishIc: '<circle cx="12" cy="12" r="8"/><path d="M8 9a4.5 4.5 0 0 1 4-2.5"/><circle cx="9" cy="9" r="1" fill="currentColor"/>',
+  supportIc: '<path d="M5 14V9a1.5 1.5 0 0 1 3 0v4"/><path d="M19 14V9a1.5 1.5 0 0 0-3 0v4"/><path d="M8 13c0 4 1.5 6 4 6s4-2 4-6"/><path d="M9 4c2-1.5 4-1.5 6 0"/>',
+  motionIc: '<circle cx="12" cy="12" r="8"/><path d="M9 10h.01M15 10h.01"/><path d="M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8"/><path d="M19 4l2-1M20 7h2"/>',
+  pulseIc: '<path d="M3 12h4l2-5 3 10 2-5h7"/>',
+  pulseSpeedIc: '<circle cx="12" cy="13" r="7"/><path d="M12 13l3-3M12 3v3"/>',
+  repeatIc: '<path d="M4 10a6 6 0 0 1 11-3l2 2"/><path d="M17 5v4h-4"/><path d="M20 14a6 6 0 0 1-11 3l-2-2"/><path d="M7 19v-4h4"/>',
+  recordFaceIc: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/>',
+  playMoveIc: '<circle cx="12" cy="12" r="8"/><path d="M10 8.5v7l5.5-3.5z"/>',
+  emblemIc: '<circle cx="10" cy="5" r="2.2"/><path d="M5 20c-3-5 0-10 6-12 3-1 6-3 8-6"/><circle cx="17" cy="10" r="1.8"/><path d="M12 11c4 0 7 2 7 5s-4 4-6 7"/>',
+  spinIc: '<ellipse cx="12" cy="17" rx="8" ry="3"/><path d="M12 3v11"/><path d="M17 15.5l2.5 1.5-2.5 1.5"/>',
+  rodIc: '<path d="M4 19c3-1 4-4 6-7s5-6 10-7"/><path d="M6 21c3-1 4-4 6-7s5-6 10-7" opacity=".6"/><path d="M9 10l2 2M13 7l2 2"/>',
+  twistIc: '<path d="M6 4c6 3 6 13 12 16"/><path d="M18 4c-6 3-6 13-12 16"/>',
+  taperIc: '<path d="M3 9h10l8 3-8 3H3z"/>',
   sculptNextIc: '<path d="M4 15c0-5 4-9 9-9 4 0 7 3 7 6 0 4-3 6-7 6-3 0-4 1-6 1-2 0-3-2-3-4z"/><path d="M17 3l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
 };
 
@@ -66,13 +81,14 @@ const DOT_WORD = { ball: 'balls', ring: 'rings', cube: 'cubes', spike: 'spikes' 
 
 export function makeMenu(vs, env) {
   const say = t => { try { env.say && env.say(t); } catch (e) { /* optional */ } };
-  const c = vs.cfg, cyc = (list, v) => list[(list.indexOf(v) + 1) % list.length];
+  const c = vs.cfg, cyc = (list, v) => list[(list.indexOf(v) + 1) % list.length], spinTarget = () => { const A = vs.assets(); return A.length ? A[A.length - 1].object : vs.clay.active ? vs.clay.active.work.group : null; };
   const brush = m => ({ label: BRUSH[m][0], ic: BRUSH[m][1], on: () => c.mode === m, act: ui => { vs.set.mode(m); say(BRUSH[m][2]); ui.draw(); } });
   const opTile = () => ({ label: 'Mode: ' + OP_WORD[c.op], ic: OP_IC[c.op], on: () => c.op !== 'add', act: ui => { vs.set.op(cyc(['add', 'subtract', 'paint', 'intersect'], c.op)); say(({ add: 'Add: brushes and shapes build clay up.', subtract: 'Subtract: brushes and shapes take clay away.', paint: 'Paint: brushes and shapes only colour what they touch, in the Colour tile\'s colour.', intersect: 'Intersect: only what a Clay stroke, Dots or a shape covers is kept.' })[c.op]); ui.draw(); } });
   const pages = {
     10: { title: 'CLAY', rows: ui => [
       brush('clay'), brush('smooth'), brush('flatten'), brush('pinch'), brush('inflate'), brush('grab'), brush('scrape'), brush('smear'), brush('dots'),
       opTile(),
+      { label: 'Finish: ' + c.finish, ic: 'finishIc', act: () => { vs.set.finish(cyc(['matte', 'satin', 'gloss', 'metal', 'glow'], c.finish)); if (!vs.clay.active) say('Clay will be ' + c.finish + '. Make some clay, then pick it to change its finish.'); ui.draw(); } },
       { label: 'Colour: ' + COLOR_WORD[c.tint % COLOR_WORD.length], ic: 'tintIc', act: () => { vs.set.tint(c.tint + 1); say('New clay and paint come out ' + COLOR_WORD[c.tint % COLOR_WORD.length] + '.'); ui.draw(); } },
       { label: 'Size ' + c.size + ' cm', ic: 'brushSize', act: () => { const L = [0.5, 1, 2, 3, 5, 8, 12, 18], n = L.find(x => x > c.size + 1e-6); vs.set.size(n || L[0]); say('Brush size ' + c.size + ' cm. The brush-hand stick also changes it.'); ui.draw(); } },
       { label: 'Strength ' + c.strength + '%', ic: 'strengthBars', act: () => { const L = [10, 25, 50, 75, 100], n = L.find(x => x > c.strength); vs.set.strength(n || L[0]); say('Strength ' + c.strength + '%'); ui.draw(); } },
@@ -82,7 +98,14 @@ export function makeMenu(vs, env) {
       ...(c.mode === 'clay' ? [{ label: 'Clay: ' + (c.clayProfile === 'flat' ? 'ribbon' : 'round'), ic: 'clayIc', act: () => { vs.set.clayProfile(c.clayProfile === 'flat' ? 'round' : 'flat'); say(c.clayProfile === 'flat' ? 'Clay comes out as a flat ribbon lying on the surface.' : 'Clay comes out as a round tube.'); ui.draw(); } }] : []),
       ...(c.mode === 'dots' ? [{ label: 'Dots: ' + DOT_WORD[c.dot], ic: 'dotsIc', act: () => { vs.set.dot(cyc(['ball', 'ring', 'cube', 'spike'], c.dot)); say('Dots presses ' + DOT_WORD[c.dot] + '.'); ui.draw(); } }] : []),
       { label: 'Undo stroke', ic: 'undoStroke', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } }, { label: 'Redo stroke', ic: 'redoStroke', act: () => { if (!vs.redo()) say('Nothing to redo'); ui.draw(); } },
-      { label: 'Shapes ▸', ic: 'shapesIc', act: () => ui.page(11) }, { label: 'Layers ▸', ic: 'layersIc', act: () => ui.page(12) },
+      { label: 'Other hand smooths: ' + (c.supportSmooth ? 'on' : 'off'), ic: 'supportIc', on: () => c.supportSmooth, act: () => { vs.set.supportSmooth(!c.supportSmooth); say(c.supportSmooth ? 'While one hand sculpts, pinch with the other hand to smooth.' : 'Both hands sculpt with the picked brush.'); ui.draw(); } },
+      { label: 'Rod', ic: 'rodIc', on: () => c.mode === 'rod', act: () => { vs.set.mode('rod'); say('Rod: pinch and draw a line; a solid rectangular rod follows it, twisted and tapered. Size sets how wide.'); ui.draw(); } },
+      ...(c.mode === 'rod' ? [{ label: 'Twist: ' + c.rodTwist + '°', ic: 'twistIc', act: () => { const L = [0, 90, 180, 360, 540], n = L.find(x => x > c.rodTwist); vs.set.rodTwist(n == null ? 0 : n); say('The next rod twists ' + c.rodTwist + ' degrees from end to end.'); ui.draw(); } },
+        { label: 'Rod end: ' + (c.rodEnd === 'taper' ? 'tapered' : 'blunt'), ic: 'taperIc', act: () => { vs.set.rodEnd(c.rodEnd === 'taper' ? 'blunt' : 'taper'); say(c.rodEnd === 'taper' ? 'The rod\'s end is drawn out and tapered to a point.' : 'The rod keeps its full size to a flat end.'); ui.draw(); } }] : []),
+      { label: 'Make the emblem', ic: 'emblemIc', act: () => { vs.makeEmblem(); ui.draw(); } },
+      { label: 'Spin: ' + (spinTarget() && vs.motion.spinning(spinTarget()) ? 'on' : 'off'), ic: 'spinIc', on: () => !!(spinTarget() && vs.motion.spinning(spinTarget())), act: () => { const L = vs.clay.active, A = vs.assets(), g = A.length ? A[A.length - 1].object : L ? L.work.group : null; if (!g) { say('Make some clay, a rod or the emblem first; Spin turns it slowly round.'); return; } const on = vs.motion.spinning(g); vs.spin(g, on ? 0 : 10); say(on ? 'Spin off: it eases to a stop.' : 'Spin on: one slow turn every 10 seconds. Save clay keeps the spin as an animation.'); ui.draw(); } },
+      vs.assetBench ? { label: 'Back to the figure', ic: 'backFigureIc', act: () => { vs.endAsset(); ui.draw(); } } : { label: 'New asset', ic: 'assetIc', act: () => { vs.newAsset(); ui.draw(); } },
+      { label: 'Shapes ▸', ic: 'shapesIc', act: () => ui.page(11) }, { label: 'Layers ▸', ic: 'layersIc', act: () => ui.page(12) }, { label: 'Expressions ▸', ic: 'motionIc', act: () => ui.page(13) },
       { label: 'Back to brushes', ic: 'undo', act: () => ui.page(0) },
     ] },
     11: { title: 'SHAPES', rows: ui => [
@@ -119,6 +142,19 @@ export function makeMenu(vs, env) {
         { label: 'Budget: ' + (c.budget ? (c.budget / 1000) + 'k' : 'all'), ic: 'budgetIc', act: () => { const L = [0, 5000, 20000, 50000, 100000], n = L[(L.indexOf(c.budget) + 1) % L.length]; vs.set.budget(n); say(n ? 'Saved copies are thinned to ' + (n / 1000) + 'k triangles. The work in the room keeps every triangle, and people are never thinned.' : 'Saved copies keep every triangle.'); ui.draw(); } },
         { label: 'Save clay', ic: 'floppy', act: () => { const w = C.works.filter(x => x.group.parent && x.layers.length); if (!w.length) { say('There is no clay to save yet.'); return; } say('Saving to the library…'); vs.save((w[0].name || 'Clay') + ' sculpted', { roots: w.map(x => x.group) }).then(() => ui.draw(), e => say('Not saved: ' + (e && e.message || e))); } },
         { label: 'Undo stroke', ic: 'undoStroke', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } },
+        { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
+      ]);
+    } },
+    13: { title: 'EXPRESSIONS', rows: ui => {
+      const ks = vs.keys(), seen = new Set(), rows = [];
+      ks.forEach(k => { if (seen.has(k.name)) return; seen.add(k.name); if (rows.length < 9) rows.push({ label: '▶ ' + k.name.slice(0, 16), ic: 'pulseIc', act: () => { vs.pulse(k.name); } }); });
+      if (!rows.length) rows.push({ label: 'No shape keys yet', ic: 'pulseIc', act: () => say('Sculpt on a face first: every stroke makes a shape key, and each key can play as an expression here.') });
+      const SP = { 0.3: 'quick', 0.6: 'normal', 1.5: 'slow' }, rec = vs.motion.recording;
+      return rows.concat([
+        { label: 'Pulse: ' + (SP[c.pulseDur] || c.pulseDur + ' s'), ic: 'pulseSpeedIc', act: () => { vs.set.pulseDur(c.pulseDur <= 0.3 ? 0.6 : c.pulseDur <= 0.6 ? 1.5 : 0.3); say(({ 0.3: 'Quick pulse (0.3 s): a micro-expression, a flicker of the brow.', 0.6: 'Normal pulse (0.6 s).', 1.5: 'Slow pulse (1.5 s): a smile that grows and fades.' })[c.pulseDur]); ui.draw(); } },
+        { label: 'Plays: ' + (c.pulseRepeat === 1 ? 'once' : c.pulseRepeat + ' times'), ic: 'repeatIc', act: () => { vs.set.pulseRepeat(c.pulseRepeat === 1 ? 3 : 1); say(c.pulseRepeat === 1 ? 'Each tap plays the expression once.' : 'Each tap plays it three times, with a rest between (never faster than once a second).'); ui.draw(); } },
+        rec ? { label: 'Stop recording', ic: 'recordFaceIc', on: () => true, act: () => { vs.stopMotion(); ui.draw(); } } : { label: 'Record face', ic: 'recordFaceIc', act: () => { vs.recordMotion(); ui.draw(); } },
+        { label: 'Play the move', ic: 'playMoveIc', act: () => { if (!vs.playMotion()) say('Record a move first: Record face, play some expressions, Stop.'); } },
         { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
       ]);
     } },
@@ -173,6 +209,18 @@ export const LESSONS = [
   L1('remesh', 'Remesh', 'Remesh layer', 'remeshIc', 'Pick a layer, set Detail, then tap Remesh layer: the layer is made again at that detail, finer or lighter.'),
   L1('budget', 'Budget', 'Budget: all', 'budgetIc', 'Tap Budget to set how many triangles a saved copy may have. Only the saved copy is thinned, and people are never thinned.'),
   L1('saveclay', 'Save clay', 'Save clay', 'floppy', 'Tap Save clay to put your clay in the library as a .glb, without taking the headset off.'),
+  L1('asset', 'New asset', 'New asset', 'assetIc', 'Tap New asset: the figure steps aside and your next clay starts an object of its own for the story. Save clay keeps it in the library; Back to the figure brings the figure back.'),
+  L1('finish', 'Finish', 'Finish: satin', 'finishIc', 'Pick a clay layer, then tap Finish to step through matte, satin, gloss, metal and glow.'),
+  L1('support', 'Other hand smooths', 'Other hand smooths: on', 'supportIc', 'Sculpt with one hand; without letting go, pinch with your other hand and rub: that hand smooths while the first keeps its brush.'),
+  L1('expressions', 'Expressions', 'Expressions ▸', 'motionIc', 'Open Expressions and tap a shape key: the face moves into it and back, smoothly, like a real expression.'),
+  L1('pulse', 'Pulse speed', 'Pulse: normal', 'pulseSpeedIc', 'Tap Pulse to choose quick (a micro-expression, 0.3 s), normal or slow (1.5 s).'),
+  L1('record', 'Record a move', 'Record face', 'recordFaceIc', 'Tap Record face, play a few expressions, then Stop recording: it becomes an animation that Save figure keeps in the .glb.'),
+  L1('playmove', 'Play the move', 'Play the move', 'playMoveIc', 'Tap Play the move to watch the last recorded expression move once.'),
+  L1('emblem', 'Make the emblem', 'Make the emblem', 'emblemIc', 'Tap Make the emblem: your two-figure emblem appears beside you, each body a rectangular rod twisted, bent and tapered, in its own colours, turning slowly.'),
+  L1('rod', 'Rod', 'Rod', 'rodIc', 'Pick Rod, then pinch and draw a curve in the air: a solid rectangular rod follows your finger, twisted and tapered to a point. Size sets how wide it is.'),
+  L1('twist', 'Twist', 'Twist: 180°', 'twistIc', 'With Rod picked, tap Twist to choose how far the next rod turns from one end to the other: 0, 90, 180, 360 or 540 degrees.'),
+  L1('rodend', 'Rod end', 'Rod end: tapered', 'taperIc', 'With Rod picked, tap Rod end: tapered draws the end out to a point, blunt keeps it full size.'),
+  L1('spin', 'Spin', 'Spin: off', 'spinIc', 'Pick some clay, then tap Spin: the whole work turns slowly round, one turn every 10 seconds. Tap again and it eases to a stop. Save clay keeps the spin.'),
   L1('saw', 'Saw on clay', 'Saw', 'cutIc', 'Pick Saw on the first Sculpt page and sweep it through clay with the trigger held: a slit as wide as the Size ring is cut, the rest stays. It saws figures and objects as before.'),
   L1('carveclay', 'Carve and stamp on clay', 'Carve', 'carveIc', 'Carve and Stamp work on clay too: sweep Carve to dig a groove, or press a picked object in with Stamp to carve its shape out of the clay.'),
 ];
@@ -187,6 +235,10 @@ export const TILES = [
   { page: 'CLAY', label: 'Symmetry: off / mirror / 360 / mirror + 360', ic: 'symOff / symMirror / symRound / symBoth' },
   { page: 'CLAY', label: 'Steady: off / some / lots', ic: 'steadyIc' }, { page: 'CLAY', label: 'Edge: smooth / linear / sharp / flat', ic: 'falloffIc' },
   { page: 'CLAY', label: 'Clay: round / ribbon (when Clay is picked)', ic: 'clayIc' }, { page: 'CLAY', label: 'Dots: balls / rings / cubes / spikes (when Dots is picked)', ic: 'dotsIc' },
+  { page: 'CLAY', label: 'Finish: matte / satin / gloss / metal / glow', ic: 'finishIc' }, { page: 'CLAY', label: 'Other hand smooths: on / off', ic: 'supportIc' },
+  { page: 'CLAY', label: 'New asset / Back to the figure', ic: 'assetIc / backFigureIc' }, { page: 'CLAY', label: 'Expressions ▸', ic: 'motionIc' },
+  { page: 'EXPRESSIONS', label: '▶ <shape key> (one tile per key, tap to play it)', ic: 'pulseIc' }, { page: 'EXPRESSIONS', label: 'Pulse: quick / normal / slow', ic: 'pulseSpeedIc' }, { page: 'EXPRESSIONS', label: 'Plays: once / 3 times', ic: 'repeatIc' },
+  { page: 'EXPRESSIONS', label: 'Record face / Stop recording', ic: 'recordFaceIc' }, { page: 'EXPRESSIONS', label: 'Play the move', ic: 'playMoveIc' },
   { page: 'CLAY', label: 'Undo stroke / Redo stroke', ic: 'undoStroke / redoStroke' }, { page: 'CLAY', label: 'Shapes ▸', ic: 'shapesIc' }, { page: 'CLAY', label: 'Layers ▸', ic: 'layersIc' },
   { page: 'SHAPES', label: 'Place a shape', ic: 'placeShapeIc' }, { page: 'SHAPES', label: 'Shape: sphere / cube / cylinder / cone / torus / capsule', ic: 'primSphere / primCube / primCylinder / primCone / primTorus / primCapsule' },
   { page: 'SHAPES', label: 'Apply shape', ic: 'applyShapeIc' }, { page: 'SHAPES', label: 'Drop shape', ic: 'dropShapeIc' }, { page: 'SHAPES', label: 'Blend: hard / soft / very soft', ic: 'blendIc' },

@@ -27,13 +27,13 @@ export function createField(opts) {
   const f = { h, band, base: base.slice(0, 3), bricks: new Map(), version: 0 };
   f.newBrick = (fill) => { const d = new Float32Array(B3).fill(fill), c = new Uint8Array(B3 * 3); for (let i = 0; i < B3; i++) { c[i * 3] = f.base[0]; c[i * 3 + 1] = f.base[1]; c[i * 3 + 2] = f.base[2]; } return { d, c }; };
   /* read a box of nx x ny x nz samples starting at sample (i0, j0, k0); index x + nx * (y + ny * z) */
-  f.read = (i0, j0, k0, nx, ny, nz) => {
-    const n = nx * ny * nz, d = new Float32Array(n), c = new Uint8Array(n * 3);
-    const bx0 = floorDiv(i0, B), by0 = floorDiv(j0, B), bz0 = floorDiv(k0, B), bx1 = floorDiv(i0 + nx - 1, B), by1 = floorDiv(j0 + ny - 1, B), bz1 = floorDiv(k0 + nz - 1, B);
+  f.read = (i0, j0, k0, nx, ny, nz, into, z0, z1) => {   /* into + z0..z1: fill only those rows of an existing region (a big region is read a slab at a time) */
+    const n = nx * ny * nz, d = into ? into.d : new Float32Array(n), c = into ? into.c : new Uint8Array(n * 3), ka = k0 + (z0 || 0), kb = k0 + (z1 == null ? nz : z1);
+    const bx0 = floorDiv(i0, B), by0 = floorDiv(j0, B), bz0 = floorDiv(ka, B), bx1 = floorDiv(i0 + nx - 1, B), by1 = floorDiv(j0 + ny - 1, B), bz1 = floorDiv(kb - 1, B);
     const b0 = f.base[0], b1 = f.base[1], b2 = f.base[2];
     for (let bz = bz0; bz <= bz1; bz++) for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
       const br = f.bricks.get(bkey(bx, by, bz));
-      const xa = Math.max(i0, bx * B), xb = Math.min(i0 + nx, bx * B + B), ya = Math.max(j0, by * B), yb = Math.min(j0 + ny, by * B + B), za = Math.max(k0, bz * B), zb = Math.min(k0 + nz, bz * B + B);
+      const xa = Math.max(i0, bx * B), xb = Math.min(i0 + nx, bx * B + B), ya = Math.max(j0, by * B), yb = Math.min(j0 + ny, by * B + B), za = Math.max(ka, bz * B), zb = Math.min(kb, bz * B + B);
       for (let z = za; z < zb; z++) for (let y = ya; y < yb; y++) {
         let o = (xa - i0) + nx * ((y - j0) + ny * (z - k0));
         if (!br || br === INSIDE) { const v = br ? -band : band; for (let x = xa; x < xb; x++, o++) { d[o] = v; c[o * 3] = b0; c[o * 3 + 1] = b1; c[o * 3 + 2] = b2; } continue; }
@@ -41,26 +41,26 @@ export function createField(opts) {
         for (let x = xa; x < xb; x++, o++, s++) { d[o] = br.d[s]; c[o * 3] = br.c[s * 3]; c[o * 3 + 1] = br.c[s * 3 + 1]; c[o * 3 + 2] = br.c[s * 3 + 2]; }
       }
     }
-    return { d, c, i0, j0, k0, nx, ny, nz };
+    return into || { d, c, i0, j0, k0, nx, ny, nz };
   };
   /* copy a brick's present state into a snapshot map, once per stroke (undefined = air, INSIDE, or a copy) */
   const snapOne = (snap, k) => { if (!snap || snap.has(k)) return; const br = f.bricks.get(k); snap.set(k, !br || br === INSIDE ? br : { d: br.d.slice(), c: br.c.slice() }); };
   /* write a region back: bricks that end up all air are dropped, all solid become INSIDE. Returns the number of bricks touched. */
-  f.write = (reg, snap) => {
-    const { d, c, i0, j0, k0, nx, ny, nz } = reg; let touched = 0;
+  f.write = (reg, snap, z0, z1) => {   /* z0..z1: write only those rows (a big region goes back a slab at a time) */
+    const { d, c, i0, j0, nx, ny } = reg, k0 = reg.k0 + (z0 || 0), nz = (z1 == null ? reg.nz : z1) - (z0 || 0), K0 = reg.k0; let touched = 0;
     const bx0 = floorDiv(i0, B), by0 = floorDiv(j0, B), bz0 = floorDiv(k0, B), bx1 = floorDiv(i0 + nx - 1, B), by1 = floorDiv(j0 + ny - 1, B), bz1 = floorDiv(k0 + nz - 1, B);
     for (let bz = bz0; bz <= bz1; bz++) for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
       const k = bkey(bx, by, bz); let br = f.bricks.get(k);
       const xa = Math.max(i0, bx * B), xb = Math.min(i0 + nx, bx * B + B), ya = Math.max(j0, by * B), yb = Math.min(j0 + ny, by * B + B), za = Math.max(k0, bz * B), zb = Math.min(k0 + nz, bz * B + B);
       if (!br || br === INSIDE) {   /* nothing to do when the region keeps the brick all air (or all solid) */
         const lim = br ? -band : band; let same = true;
-        for (let z = za; z < zb && same; z++) for (let y = ya; y < yb && same; y++) { let o = (xa - i0) + nx * ((y - j0) + ny * (z - k0)); for (let x = xa; x < xb; x++, o++) { if (br ? d[o] > lim : d[o] < lim) { same = false; break; } if (c[o * 3] !== f.base[0] || c[o * 3 + 1] !== f.base[1] || c[o * 3 + 2] !== f.base[2]) { if (br) { same = false; break; } } } }
+        for (let z = za; z < zb && same; z++) for (let y = ya; y < yb && same; y++) { let o = (xa - i0) + nx * ((y - j0) + ny * (z - K0)); for (let x = xa; x < xb; x++, o++) { if (br ? d[o] > lim : d[o] < lim) { same = false; break; } if (c[o * 3] !== f.base[0] || c[o * 3 + 1] !== f.base[1] || c[o * 3 + 2] !== f.base[2]) { if (br) { same = false; break; } } } }
         if (same) continue;
         snapOne(snap, k); br = f.newBrick(br ? -band : band); f.bricks.set(k, br);
       } else snapOne(snap, k);
       touched++;
       for (let z = za; z < zb; z++) for (let y = ya; y < yb; y++) {
-        let o = (xa - i0) + nx * ((y - j0) + ny * (z - k0)), s = (xa - bx * B) + B * ((y - by * B) + B * (z - bz * B));
+        let o = (xa - i0) + nx * ((y - j0) + ny * (z - K0)), s = (xa - bx * B) + B * ((y - by * B) + B * (z - bz * B));
         for (let x = xa; x < xb; x++, o++, s++) { const v = d[o]; br.d[s] = v > band ? band : v < -band ? -band : v; br.c[s * 3] = c[o * 3]; br.c[s * 3 + 1] = c[o * 3 + 1]; br.c[s * 3 + 2] = c[o * 3 + 2]; }
       }
       let allOut = true, allIn = true; for (let s = 0; s < B3; s++) { const v = br.d[s]; if (v < band) allOut = false; if (v > -band) allIn = false; if (!allOut && !allIn) break; }
@@ -104,12 +104,15 @@ const MAX_SAMPLES = 900000;   /* about 3.6 MB of distances: a bigger box would s
    color [r, g, b] is what added clay or paint becomes; amount 0..1 how strongly paint covers. */
 /* in place, brick by brick: a brick the shape cannot reach is never read (the distance is 1-Lipschitz, so the distance at a brick's middle minus half its diagonal bounds every sample in it),
    and a brick is copied for undo and made solid only when a sample in it really changes. This is the hot path of every clay stroke, shape and saw pass. */
-export function opShape(f, lo, hi, dist, mode, k, color, snap, amount) {
+export function drain(g) { let r; do { r = g.next(); } while (!r.done); return r.value; }   /* run a sliced operation to its end, here and now */
+export function opShape(...a) { return drain(opShapeGen(...a)); }
+export function* opShapeGen(f, lo, hi, dist, mode, k, color, snap, amount) {
   const pad = Math.ceil((f.band + k) / f.h) + 1, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, pad); if (nx * ny * nz > MAX_SAMPLES) return null;
   const h = f.h, h2 = h * 2, band = f.band, a = amount == null ? 1 : amount, half = 3.5 * h * Math.sqrt(3), reach = mode === 'paint' ? 0 : band + k, base = f.base;
   const bx0 = Math.floor(i0 / B), by0 = Math.floor(j0 / B), bz0 = Math.floor(k0 / B), bx1 = Math.floor((i0 + nx - 1) / B), by1 = Math.floor((j0 + ny - 1) / B), bz1 = Math.floor((k0 + nz - 1) / B);
   let changed = false, ci0 = 1e9, cj0 = 1e9, ck0 = 1e9, ci1 = -1e9, cj1 = -1e9, ck1 = -1e9;
   for (let bz = bz0; bz <= bz1; bz++) for (let by = by0; by <= by1; by++) for (let bx = bx0; bx <= bx1; bx++) {
+    yield;   /* a pause point between bricks: the frame budget decides whether to go on now or next frame */
     const dc = dist((bx * B + 3.5) * h, (by * B + 3.5) * h, (bz * B + 3.5) * h); if (dc - half > reach) continue;
     const key = bkey(bx, by, bz); let br = f.bricks.get(key);
     if (mode === 'subtract' && !br) continue; if (mode === 'paint' && (!br || br === INSIDE)) continue; if (mode === 'add' && br === INSIDE) continue;
@@ -166,33 +169,40 @@ export function opShapeDense(f, lo, hi, dist, mode, k, color, snap, amount) {   
   if (!changed) return null; f.write(r, snap); return doneBox(r);
 }
 /* intersect across the WHOLE layer: everything outside the shape goes (a temp field holds the shape: a stroke or a primitive). k = blend. */
-export function opIntersectField(f, g, k, snap, gMap) {
+export function opIntersectField(...a) { return drain(opIntersectFieldGen(...a)); }
+export function* opIntersectFieldGen(f, g, k, snap, gMap) {
   const bb = f.bounds(); if (!bb) return null; const h = f.h, [i0, j0, k0] = bb, nx = bb[3] - i0 + 1, ny = bb[4] - j0 + 1, nz = bb[5] - k0 + 1;
   const out = []; for (let bz = Math.floor(k0 / B); bz <= Math.floor(bb[5] / B); bz++) for (let by = Math.floor(j0 / B); by <= Math.floor(bb[4] / B); by++) for (let bx = Math.floor(i0 / B); bx <= Math.floor(bb[3] / B); bx++) {
-    if (!f.bricks.has(bkey(bx, by, bz))) continue;
+    if (!f.bricks.has(bkey(bx, by, bz))) continue; yield;
     const r = f.read(bx * B, by * B, bz * B, B, B, B); let ch = false;
     for (let z = 0; z < B; z++) for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) { const o = x + B * (y + B * z), p = gMap ? gMap((bx * B + x) * h, (by * B + y) * h, (bz * B + z) * h) : [(bx * B + x) * h, (by * B + y) * h, (bz * B + z) * h], s = g.sample(p[0], p[1], p[2]), nv = smax(r.d[o], s, k); if (nv !== r.d[o]) { r.d[o] = nv; ch = true; } }
     if (ch) { f.write(r, snap); out.push(1); }
   }
   void nx; void ny; void nz; return out.length ? bb : null;
 }
+/* the read-change-write operations, sliced: the box is read a slab at a time, changed a row at a time, written back a slab at a time, with pause points between, and computed from an untouched
+   copy, so slicing never changes the result. */
+function* readSlabs(f, i0, j0, k0, nx, ny, nz) { const r = { d: new Float32Array(nx * ny * nz), c: new Uint8Array(nx * ny * nz * 3), i0, j0, k0, nx, ny, nz }; for (let z = 0; z < nz; z += 4) { f.read(i0, j0, k0, nx, ny, nz, r, z, Math.min(nz, z + 4)); yield; } return r; }
+function* writeSlabs(f, r, snap) { for (let z = 0; z < r.nz; z += 4) { f.write(r, snap, z, Math.min(r.nz, z + 4)); yield; } }
 /* Inflate (amount > 0 grows the clay out, < 0 shrinks it in) inside a ball */
-export function opOffset(f, c, rad, amount, fall, snap) {
+export function opOffset(...a) { return drain(opOffsetGen(...a)); }
+export function* opOffsetGen(f, c, rad, amount, fall, snap) {
   const [i0, j0, k0, nx, ny, nz] = box(f, [c[0] - rad, c[1] - rad, c[2] - rad], [c[0] + rad, c[1] + rad, c[2] + rad], 1); if (nx * ny * nz > MAX_SAMPLES) return null;
-  const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, h = f.h, band = f.band; let ch = false;
-  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const o = x + nx * (y + ny * z), old = d[o]; if (old >= band && amount < 0) continue; if (old <= -band && amount > 0) continue; const dx = (i0 + x) * h - c[0], dy = (j0 + y) * h - c[1], dz = (k0 + z) * h - c[2], w = fall(Math.sqrt(dx * dx + dy * dy + dz * dz) / rad); if (w <= 0) continue; d[o] = old - amount * w; ch = true; }
-  if (!ch) return null; f.write(r, snap); return doneBox(r);
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, h = f.h, band = f.band; let ch = false;
+  for (let z = 0; z < nz; z++) { yield; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const o = x + nx * (y + ny * z), old = d[o]; if (old >= band && amount < 0) continue; if (old <= -band && amount > 0) continue; const dx = (i0 + x) * h - c[0], dy = (j0 + y) * h - c[1], dz = (k0 + z) * h - c[2], w = fall(Math.sqrt(dx * dx + dy * dy + dz * dz) / rad); if (w <= 0) continue; d[o] = old - amount * w; ch = true; } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
 }
 /* Smooth: each sample moves toward the mean of its six neighbours (the surface relaxes), strongest in the middle of the ball */
-export function opSmooth(f, c, rad, s, fall, snap) {
+export function opSmooth(...a) { return drain(opSmoothGen(...a)); }
+export function* opSmoothGen(f, c, rad, s, fall, snap) {
   const [i0, j0, k0, nx, ny, nz] = box(f, [c[0] - rad, c[1] - rad, c[2] - rad], [c[0] + rad, c[1] + rad, c[2] + rad], 2); if (nx * ny * nz > MAX_SAMPLES) return null;
-  const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, src = d.slice(), h = f.h, band = f.band; let ch = false;
-  for (let z = 1; z < nz - 1; z++) for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) {
-    const o = x + nx * (y + ny * z), old = src[o]; if (old >= band || old <= -band) { let near = false; for (const q of [1, -1, nx, -nx, nx * ny, -nx * ny]) if (Math.abs(src[o + q]) < band) { near = true; break; } if (!near) continue; }
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, src = d.slice(), h = f.h, band = f.band; let ch = false;
+  for (let z = 1; z < nz - 1; z++) { yield; for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) {
+    const o = x + nx * (y + ny * z), old = src[o]; if (old >= band || old <= -band) { if (!(Math.abs(src[o + 1]) < band || Math.abs(src[o - 1]) < band || Math.abs(src[o + nx]) < band || Math.abs(src[o - nx]) < band || Math.abs(src[o + nx * ny]) < band || Math.abs(src[o - nx * ny]) < band)) continue; }
     const dx = (i0 + x) * h - c[0], dy = (j0 + y) * h - c[1], dz = (k0 + z) * h - c[2], w = fall(Math.sqrt(dx * dx + dy * dy + dz * dz) / rad) * s; if (w <= 0) continue;
     const m = (src[o + 1] + src[o - 1] + src[o + nx] + src[o - nx] + src[o + nx * ny] + src[o - nx * ny]) / 6; d[o] = old + (m - old) * Math.min(1, w); if (d[o] !== old) ch = true;
-  }
-  if (!ch) return null; f.write(r, snap); return doneBox(r);
+  } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
 }
 /* the surface plane under the brush: the mean place and mean outward direction of the samples near the surface inside the ball; null when no surface is there */
 export function surfacePlane(f, c, rad) {
@@ -207,33 +217,35 @@ export function surfacePlane(f, c, rad) {
   return { p: [p[0] / W, p[1] / W, p[2] / W], n: [n[0] / L, n[1] / L, n[2] / L], weight: W };
 }
 /* Flatten, Scrape and Fill: the clay inside the ball moves toward the plane (Scrape only takes away what stands above it, Fill only fills what lies below) */
-export function opPlane(f, c, rad, plane, s, kind, fall, snap) {
+export function opPlane(...a) { return drain(opPlaneGen(...a)); }
+export function* opPlaneGen(f, c, rad, plane, s, kind, fall, snap) {
   const [i0, j0, k0, nx, ny, nz] = box(f, [c[0] - rad, c[1] - rad, c[2] - rad], [c[0] + rad, c[1] + rad, c[2] + rad], 1); if (nx * ny * nz > MAX_SAMPLES) return null;
-  const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, h = f.h, band = f.band, P = plane.p, N = plane.n; let ch = false;
-  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, h = f.h, band = f.band, P = plane.p, N = plane.n; let ch = false;
+  for (let z = 0; z < nz; z++) { yield; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
     const o = x + nx * (y + ny * z), old = d[o], X = (i0 + x) * h, Y = (j0 + y) * h, Z = (k0 + z) * h, dx = X - c[0], dy = Y - c[1], dz = Z - c[2], w = fall(Math.sqrt(dx * dx + dy * dy + dz * dz) / rad) * s; if (w <= 0) continue;
     const pd = (X - P[0]) * N[0] + (Y - P[1]) * N[1] + (Z - P[2]) * N[2];   /* the plane's own signed distance: above the plane is air */
     let goal = pd; if (kind === 'scrape') goal = Math.max(old, pd); else if (kind === 'fill') goal = Math.min(old, pd);
     if (Math.abs(goal) > band && Math.abs(old) >= band) continue;
     const nv = old + (goal - old) * Math.min(1, w); if (nv !== old) { d[o] = nv; ch = true; }
-  }
-  if (!ch) return null; f.write(r, snap); return doneBox(r);
+  } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
 }
 /* a warp: the clay at each point comes from p - disp(p) (Grab, Smear, Pinch, Melt). disp returns [dx, dy, dz] in metres or null. The box must hold every point that moves AND where it comes from. */
-export function opWarp(f, lo, hi, reach, disp, snap) {
+export function opWarp(...a) { return drain(opWarpGen(...a)); }
+export function* opWarpGen(f, lo, hi, reach, disp, snap) {
   const padC = Math.ceil(reach / f.h) + 2, [i0, j0, k0, nx, ny, nz] = box(f, lo, hi, padC); if (nx * ny * nz > MAX_SAMPLES) return null;
-  const r = f.read(i0, j0, k0, nx, ny, nz), d = r.d, c = r.c, src = d.slice(), csrc = c.slice(), h = f.h; let ch = false;
+  const r = yield* readSlabs(f, i0, j0, k0, nx, ny, nz), d = r.d, c = r.c, src = d.slice(), csrc = c.slice(), h = f.h; let ch = false;
   const tri = (gx, gy, gz) => {   /* trilinear from the copy, clamped to the box */
     gx = Math.max(0, Math.min(nx - 1.001, gx)); gy = Math.max(0, Math.min(ny - 1.001, gy)); gz = Math.max(0, Math.min(nz - 1.001, gz));
     const x = Math.floor(gx), y = Math.floor(gy), z = Math.floor(gz), u = gx - x, v = gy - y, w = gz - z, o = x + nx * (y + ny * z), sx = 1, sy = nx, sz = nx * ny;
     const c00 = src[o] * (1 - u) + src[o + sx] * u, c10 = src[o + sy] * (1 - u) + src[o + sy + sx] * u, c01 = src[o + sz] * (1 - u) + src[o + sz + sx] * u, c11 = src[o + sz + sy] * (1 - u) + src[o + sz + sy + sx] * u;
     return [(c00 * (1 - v) + c10 * v) * (1 - w) + (c01 * (1 - v) + c11 * v) * w, Math.round(gx) + nx * (Math.round(gy) + ny * Math.round(gz))];
   };
-  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+  for (let z = 0; z < nz; z++) { yield; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
     const X = (i0 + x) * h, Y = (j0 + y) * h, Z = (k0 + z) * h, m = disp(X, Y, Z); if (!m) continue; const L2 = m[0] * m[0] + m[1] * m[1] + m[2] * m[2]; if (L2 < 1e-14) continue;
     const o = x + nx * (y + ny * z), [v, co] = tri(x - m[0] / h, y - m[1] / h, z - m[2] / h); if (v === src[o]) continue; d[o] = v; c[o * 3] = csrc[co * 3]; c[o * 3 + 1] = csrc[co * 3 + 1]; c[o * 3 + 2] = csrc[co * 3 + 2]; ch = true;
-  }
-  if (!ch) return null; f.write(r, snap); return doneBox(r);
+  } }
+  if (!ch) return null; yield* writeSlabs(f, r, snap); return doneBox(r);
 }
 /* field g (in its own space) into f: gMap(x, y, z) turns a point of f's space into g's; mode as opShape. Used by Merge down, by booleans between layers and by Remesh (into an empty field). */
 export function opMergeField(f, g, gMap, mode, k, snap, lo, hi) {

@@ -185,12 +185,53 @@ export async function runNextTests(T, ctx) {
     cleanup(vs);
   });
 
+  /* ---------- the flow: the other hand smooths, quick swap, haptic ticks, finish, the story-asset bench, expressions that move and save ---------- */
+  await section('flow', async () => {
+    const vs = fresh(), C = new V3(0, 1.2, -0.5), L = ballLayer(vs, C, 0.06), V0 = vol(L), top = C.clone().add(new V3(0, 0.06, 0)), side = C.clone().add(new V3(0.06, 0, 0));
+    vs.set.mode('inflate'); vs.set.size(3); let pulses = 0, supportMode = null;
+    for (let i = 0; i < 12; i++) { const hs = [hand('a', top, true)]; if (i >= 4) hs.push(hand('b', side, true)); vs.frame(hs, 0.016); if (vs.cursor.hands.a && vs.cursor.hands.a.pulse > 0) pulses++; if (vs.cursor.hands.b) supportMode = vs.cursor.hands.b.mode; }
+    vs.frame([hand('a', top, false), hand('b', side, false)], 0.016); vs.flush(); res.fl_supportSmooths = b(supportMode === 'smooth'); res.fl_hapticTicks = pulses; res.fl_haptic = b(pulses > 0); vs.undo(); vs.undo(); vs.flush();
+    const v1 = vol(L); run(vs, still(top, 15), { alt: true }); res.fl_quickSwap = b(vol(L) < v1); vs.undo(); vs.flush();
+    vs.clay.pickLayer(L); vs.set.finish('metal'); res.fl_finish = b(L.material.metalness > 0.8); res.fl_finishUndo = b(vs.undo() && L.material.metalness < 0.1);
+    const { makeTestFigure } = await import('/pe_lib/sculpt_next_testkit.js'); const F = makeTestFigure(T); F.root.position.set(-1.5, 0, 0); scene.add(F.root); F.root.updateMatrixWorld(true);
+    const vf = ctx.createVrSculpt(T, null, mkHost({ figure: () => F.root })); vf.enter(F.root); vf.set.stabilize(0);
+    const w0 = vf.clay.works.length; vf.newAsset(); res.fl_assetHidesFigure = b(!F.root.visible); vf.set.mode('clay'); vf.set.size(2); run(vf, line(new V3(-1.0, 1.4, -0.5), new V3(-0.9, 1.4, -0.5), 10));
+    res.fl_assetNewWork = b(vf.clay.works.length === w0 + 1 && vf.clay.active.work.layers.length === 1); res.fl_assetNotOnFigure = b(!Object.keys(F.body.morphTargetDictionary).some(k => /^Shape/.test(k))); vf.endAsset(); res.fl_assetBack = b(F.root.visible);
+    const k = F.body.morphTargetDictionary.Smile, base = F.body.morphTargetInfluences[k]; vf.set.pulseDur(0.3); vf.pulse('Smile'); let peak = 0; for (let i = 0; i < 12; i++) { vf.frame([], 0.016); peak = Math.max(peak, F.body.morphTargetInfluences[k]); } for (let i = 0; i < 20; i++) vf.frame([], 0.016);
+    res.fl_pulsePeak = r2(peak); res.fl_pulse = b(peak > base + 0.3 && Math.abs(F.body.morphTargetInfluences[k] - base) < 1e-6);
+    vf.set.pulseDur(0.1); res.fl_pulseNeverUnder200ms = b(vf.cfg.pulseDur >= 0.2);
+    vf.recordMotion(); vf.set.pulseDur(0.6); vf.pulse('Smile'); for (let i = 0; i < 45; i++) vf.frame([], 0.016); const clip = vf.stopMotion('Test smile'); res.fl_clip = b(clip && clip.tracks.length >= 1 && clip.duration > 0.5); res.fl_clipName = clip ? clip.name : '';
+    res.fl_playMove = b(vf.playMotion()); const out = await vf.exportGlb([F.root], {}), gl = await new Promise((ok, no) => new ctx.Loader().parse(out.buffer, '', ok, no)); res.fl_glbAnimations = gl.animations.length; res.fl_glbAnimationName = gl.animations[0] ? gl.animations[0].name : '';
+    cleanup(vf); cleanup(vs); scene.remove(F.root);
+  });
+
+  /* ---------- Ruth's emblem in clay, sliced (no frame over budget), six coloured layers, a spin that eases, a Spin clip in the .glb; one undo removes it ---------- */
+  await section('emblem', async () => {
+    const vs = fresh(); const t0 = now(), e = vs.makeEmblem({ at: new V3(0, 1.3, -0.6) }), g = e.object; res.em_buildMs = Math.round(now() - t0);
+    const parts = g.children.filter(o => o.isMesh); res.em_parts = parts.map(o => o.name).join(', '); res.em_tris = parts.reduce((a, o) => a + o.geometry.index.count / 3, 0);
+    const avg = name => { const m = parts.find(o => o.name === name), C = m.geometry.attributes.color.array; let r = 0, gg = 0, bb = 0; for (let i = 0; i < C.length; i += 3) { r += C[i]; gg += C[i + 1]; bb += C[i + 2]; } const n = C.length / 3; return [r / n, gg / n, bb / n]; };
+    const bl = avg('Blue figure'), or = avg('Orange figure'); res.em_blueIsBlue = b(bl[2] > bl[0] * 1.5); res.em_orangeIsWarm = b(or[0] > or[2] * 1.5);
+    const bf = parts.find(o => o.name === 'Blue figure'); bf.geometry.computeBoundingBox(); const bs = bf.geometry.boundingBox.getSize(new V3()); res.em_rodDepthCm = r2(bs.z * 100); res.em_is3D = b(bs.z > 0.04);
+    res.em_inAssets = b(vs.assets().some(a => a.object === g)); res.em_pickable = b(vs.squeezed().some(a => a.object === g));
+    res.em_spinning = b(vs.motion.spinning(g)); const q0 = g.quaternion.clone(); for (let i = 0; i < 60; i++) vs.frame([], 0.016); res.em_turned = b(g.quaternion.angleTo(q0) > 0.05); res.em_spinClip = b((g.animations || []).some(c => c.name === 'Spin'));
+    const ex = await vs.exportGlb([g], {}), gl = await new Promise((ok, no) => new ctx.Loader().parse(ex.buffer, '', ok, no)); let meshes = 0; gl.scene.traverse(o => { if (o.isMesh) meshes++; }); res.em_glbMeshes = meshes; res.em_glbSpin = b(gl.animations.some(c => c.name === 'Spin'));
+    vs.set.mode('inflate'); vs.set.size(3); const tip = new V3().setFromMatrixPosition(g.matrixWorld); const hb = new T.Box3().setFromObject(parts.find(o => o.name === 'Orange head')), hc = hb.getCenter(new V3()), top = new V3(hc.x, hb.max.y, hc.z); run(vs, still(top, 12)); res.em_brushable = b(vs.keys().some(k => k.mesh.name === 'Orange head')); void tip;
+    vs.spin(g, 0); for (let i = 0; i < 120; i++) vs.frame([], 0.016); res.em_spinStops = b(!vs.motion.spinning(g));
+    while (vs.canUndo() && g.parent) vs.undo(); res.em_undo = b(!g.parent && !vs.assets().includes(e.entry)); cleanup(vs);
+  });
+  await section('rod', async () => {
+    const vs = fresh(); vs.set.mode('rod'); vs.set.size(2); vs.set.rodTwist(180); const pts = []; for (let i = 0; i < 40; i++) { const a = i / 39 * Math.PI; pts.push(new V3(Math.cos(a) * 0.15, 1.3 + Math.sin(a) * 0.15, -0.6 + i * 0.002)); }
+    const fm = run(vs, pts); const A = vs.assets(), rod = A.find(a => a.kind === 'rod'); res.rod_made = b(!!rod); res.rod_frameMs = st(fm);
+    if (rod) { const g = rod.object.geometry; res.rod_tris = g.index.count / 3; g.computeBoundingBox(); const sz = g.boundingBox.getSize(new V3()); res.rod_followsPath = b(sz.x > 0.25 && sz.y > 0.12); }
+    res.rod_undo = b(vs.undo() && !vs.assets().length); res.rod_redo = b(vs.redo() && vs.assets().length === 1); cleanup(vs);
+  });
+
   /* ---------- the menu pages, icons and lessons ---------- */
   await section('menu', async () => {
     const vs = fresh(), host = ['inflateIc', 'smoothIc', 'grabIc', 'brushSize', 'strengthBars', 'symOff', 'symMirror', 'symRound', 'undoStroke', 'redoStroke', 'undo', 'floppy', 'eye', 'lock', 'cutIc', 'carveIc'], has = ic => ic in vs.icons || host.includes(ic);
     let rows = 0, bad = []; const ui = { draw() {}, page() {}, say() {} };
-    [10, 11, 12].forEach(pg => vs.menu(pg, ui).forEach(r => { rows++; if (!r.label || !has(r.ic)) bad.push(r.label + ':' + r.ic); }));
-    res.u_rows = rows; res.u_iconsOk = b(!bad.length); if (bad.length) res.u_badIcons = bad.join(' | '); res.u_titles = [10, 11, 12].map(p => vs.menuTitle(p)).join(',');
+    [10, 11, 12, 13].forEach(pg => vs.menu(pg, ui).forEach(r => { rows++; if (!r.label || !has(r.ic)) bad.push(r.label + ':' + r.ic); }));
+    res.u_rows = rows; res.u_iconsOk = b(!bad.length); if (bad.length) res.u_badIcons = bad.join(' | '); res.u_titles = [10, 11, 12, 13].map(p => vs.menuTitle(p)).join(',');
     res.u_lessons = vs.lessons.length; res.u_lessonsOneStep = b(vs.lessons.every(l => l.steps.length === 1 && l.steps[0].text && has(l.steps[0].tile.ic)));
     let ran = 0; try { vs.menu(10, ui).filter(r => /^(Mode|Colour|Size|Strength|Symmetry|Steady|Edge)/.test(r.label)).forEach(r => { r.act(); ran++; }); vs.menu(11, ui).filter(r => /^(Shape:|Blend|Hold:|Clay on)/.test(r.label)).forEach(r => { r.act(); ran++; }); } catch (e) { res.u_actError = String(e.message); }
     res.u_actsRun = ran; res.u_tiles = vs.tiles.length; res.u_svgParse = b(Object.values(vs.icons).every(s => { try { return new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg">' + s + '</svg>', 'image/svg+xml').getElementsByTagName('parsererror').length === 0; } catch (e) { return false; } }));

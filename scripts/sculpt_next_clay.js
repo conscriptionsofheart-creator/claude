@@ -2,7 +2,7 @@
    triangles (sculpt_next_mesher.js), meshed in a Web Worker so a stroke never holds up a frame. Layers can be hidden, locked, grouped, duplicated, merged down (add, subtract, intersect) and remeshed;
    every change is one undo step. Strokes take mirror and radial symmetry from the work's own frame: the mirror is the work's middle plane, radial goes round its upright.
    makeClay(THREE, env): env = { say, addObject, removeObject, pushUndo({label, undo, redo}), dirty(obj), workerUrl (optional), noWorker (tests) }. */
-import { createField, voxelizeTris, INSIDE, bkey, opShape, opOffset, opSmooth, opPlane, opWarp, opIntersectField, opMergeField, surfacePlane, sdCapsule, sdPrim, falloff, bunkey, B } from './sculpt_next_sdf.js';
+import { createField, voxelizeTris, INSIDE, bkey, opIntersectFieldGen, opShapeGen, opOffsetGen, opSmoothGen, opPlaneGen, opWarpGen, opShape, opOffset, opSmooth, opPlane, opWarp, opIntersectField, opMergeField, surfacePlane, sdCapsule, sdPrim, falloff, bunkey, B } from './sculpt_next_sdf.js';
 import { meshChunk } from './sculpt_next_mesher.js';
 
 const N = 16;   /* cells per chunk side: 8 cm of clay at the normal 5 mm detail */
@@ -12,7 +12,9 @@ export const CLAY_COLORS = [[214, 196, 170], [196, 120, 96], [143, 184, 217], [1
 export function makeClay(THREE, env) {
   env = env || {};
   const V3 = THREE.Vector3, M4 = THREE.Matrix4, Q = THREE.Quaternion, say = t => { try { env.say && env.say(t); } catch (e) { /* the host's voice is optional */ } };
-  const works = [], S = { jobs: new Map(), active: null, layerN: 0, workN: 0, groupN: 0, worker: null, workerOk: false, inflight: 0, jobId: 0, meshMs: 0, meshCount: 0, lastDabMs: 0, dabs: 0, dabMs: 0 };
+  const LINEAR = parseInt(THREE.REVISION, 10) >= 152 && !(THREE.ColorManagement && THREE.ColorManagement.enabled === false), SL = new Float32Array(1025); for (let i = 0; i <= 1024; i++) { const c = i / 1024; SL[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  const toLinear = a => { for (let i = 0; i < a.length; i++) { const v = a[i] <= 0 ? 0 : a[i] >= 1 ? 1 : a[i]; a[i] = SL[Math.round(v * 1024)]; } };
+  const works = [], S = { queue: [], jobsDone: 0, pumpMs: 0, jobs: new Map(), active: null, layerN: 0, workN: 0, groupN: 0, worker: null, workerOk: false, inflight: 0, jobId: 0, meshMs: 0, meshCount: 0, lastDabMs: 0, dabs: 0, dabMs: 0 };
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   /* ---------- the worker (off the page's thread); if it cannot start, meshing runs on the page within a time budget per frame ---------- */
@@ -55,6 +57,10 @@ export function makeClay(THREE, env) {
   const allLayers = () => { const out = []; works.forEach(w => w.layers.forEach(l => out.push(l))); return out; };
   const live = l => l && l.group.parent && l.work.group.parent;
   function ensureLayer(at, frameObj) {   /* the layer a clay stroke goes into: the picked one, else a new work (at the figure's middle plane when a figure is on the bench, else where the hand is) */
+    if (S.forceNew) {   /* the asset bench: a new work of its own, where the hand is, not tied to the figure */
+      S.forceNew = false; const w = newWork(at.clone(), null), L = newLayer(w); S.active = L;
+      env.pushUndo && env.pushUndo({ label: 'new asset', undo: () => { detachWork(w); }, redo: () => { attachWork(w); S.active = L; } }); return L;
+    }
     if (live(S.active) && S.active.group.visible) return S.active;
     if (S.active && live(S.active) && !S.active.group.visible) { say('The picked layer is hidden: show it, or pick another layer.'); return null; }
     const w0 = works.find(w => w.group.parent && w.layers.length);
@@ -83,6 +89,7 @@ export function makeClay(THREE, env) {
     const L = layerById.get(lid); if (!L || L.chunkVer.get(k) !== ver) return;   /* a newer job is on its way: this one is stale */
     let mesh = L.chunks.get(k);
     if (!m.index.length) { if (mesh) { L.group.remove(mesh); mesh.geometry.dispose(); L.chunks.delete(k); } return; }
+    if (LINEAR) toLinear(m.color);   /* three r152 and later read vertex colours as linear light: the clay's colours are picked as screen (sRGB) colours, so they are turned once here, or a deep navy comes out pale */
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(m.position, 3)); g.setAttribute('normal', new THREE.BufferAttribute(m.normal, 3)); g.setAttribute('color', new THREE.BufferAttribute(m.color, 3)); g.setIndex(new THREE.BufferAttribute(m.index, 1)); g.computeBoundingSphere(); g.computeBoundingBox();
     if (!mesh) { mesh = new THREE.Mesh(g, L.material); mesh.name = '_clay_chunk'; mesh.userData.noMerge = true; mesh.userData.clayLayer = L.id; L.group.add(mesh); L.chunks.set(k, mesh); }
     else { const old = mesh.geometry; mesh.geometry = g; old.dispose(); }
@@ -90,11 +97,12 @@ export function makeClay(THREE, env) {
   }
   /* every frame: send dirty chunks to the worker, or mesh them here until the time budget is spent. The picked layer goes first. */
   function tick(budgetMs) {
+    pump(Math.max(2, budgetMs || 4));   /* queued dabs first: what the hand did shows soonest */
     if (remeshJobs.length) remeshTick(Math.max(2, (budgetMs || 4) * 0.75), false);
     const order = allLayers().filter(l => l.dirty.size).sort((a, b) => (a === S.active ? -1 : b === S.active ? 1 : 0)); if (!order.length) return 0;
     let done = 0; const t0 = now();
     if (S.worker && S.inflight < 3) {
-      const jobs = []; for (const L of order) { for (const k of L.dirty) { jobs.push(job(L, k)); L.dirty.delete(k); if (jobs.length >= 24) break; } if (jobs.length >= 24) break; }
+      const jobs = [], tj = now(); for (const L of order) { for (const k of L.dirty) { jobs.push(job(L, k)); L.dirty.delete(k); if (jobs.length >= 24 || now() - tj > 2.5) break; } if (jobs.length >= 24 || now() - tj > 2.5) break; }   /* reading the chunks to send costs time too: at most 2.5 ms of it a frame */
       if (jobs.length) { S.inflight++; const move = []; jobs.forEach(j => move.push(j.d.buffer, j.c.buffer)); S.worker.postMessage({ type: 'mesh', id: ++S.jobId, jobs }, move); done = jobs.length; }
       return done;
     }
@@ -102,10 +110,10 @@ export function makeClay(THREE, env) {
     for (const L of order) { for (const k of [...L.dirty]) { const j = job(L, k); L.dirty.delete(k); const m = meshChunk(j.d, j.c, j.n, j.i0, j.j0, j.k0, j.h); applyMesh(L.id, k, j.ver, m); done++; if (now() - t0 > (budgetMs || 4)) break; } if (now() - t0 > (budgetMs || 4)) break; }
     S.meshMs += now() - t0; S.meshCount += done; return done;
   }
-  function flush() {   /* finish every remesh and mesh everything that waits, right now, here (tests, a save, an export) */
-    remeshTick(0, true); const t0 = now(); let n = 0; allLayers().forEach(L => { for (const k of [...L.dirty]) { const j = job(L, k); L.dirty.delete(k); applyMesh(L.id, k, j.ver, meshChunk(j.d, j.c, j.n, j.i0, j.j0, j.k0, j.h)); n++; } }); S.meshMs += now() - t0; S.meshCount += n; return n;
+  function flush() {   /* run every queued dab, finish every remesh and mesh everything that waits, right now, here (tests, a save, an export, an undo) */
+    drainQueue(); remeshTick(0, true); const t0 = now(); let n = 0; allLayers().forEach(L => { for (const k of [...L.dirty]) { const j = job(L, k); L.dirty.delete(k); applyMesh(L.id, k, j.ver, meshChunk(j.d, j.c, j.n, j.i0, j.j0, j.k0, j.h)); n++; } }); S.meshMs += now() - t0; S.meshCount += n; return n;
   }
-  const pending = () => allLayers().reduce((a, l) => a + l.dirty.size, 0) + S.inflight + remeshJobs.length;
+  const pending = () => allLayers().reduce((a, l) => a + l.dirty.size, 0) + S.inflight + remeshJobs.length + S.queue.length;
 
   /* ---------- where the clay is: the nearest visible, unlocked layer surface to a world point (distance in metres, null when farther than the reach) ---------- */
   const scaleOf = obj => { obj.updateMatrixWorld(true); const s = new V3(); obj.matrixWorld.decompose(new V3(), new Q(), s); return Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)) || 1; };
@@ -145,7 +153,7 @@ export function makeClay(THREE, env) {
 
   /* ---------- a clay stroke: begin, step (one dab between the last point and this one), end (one undo step) ---------- */
   function strokeBegin(L, opts) {
-    const st = { L, work: L.work, snaps: new Map(), last: null, lastDab: null, hold: 0, opts, temp: null, changed: false, dots: 0, travel: 0 };
+    const st = { L, work: L.work, snaps: new Map(), last: null, lastDab: null, hold: 0, opts, temp: null, changed: false, dots: 0, travel: 0, jobs: 0, ending: false, done: false };
     if (opts.op === 'intersect' && (opts.mode === 'clay' || opts.mode === 'dots')) st.temp = createField({ h: L.field.h, color: L.field.base });   /* intersect: the stroke is gathered first, then only the clay inside it stays */
     return st;
   }
@@ -154,48 +162,69 @@ export function makeClay(THREE, env) {
   function strokeStep(st, pw, prevW, opts) {
     const t0 = now(), L = st.L; if (L.locked) return false; const fld = L.field, sc = scaleOf(L.group), mode = opts.mode, op = opts.op, rW = opts.radius;
     const sets = copiesWorld(st.work, [pw, prevW || pw], opts.sym, opts.count), fall = falloff(opts.falloff), snap = snapFor(st, L), toL = p => L.group.worldToLocal(p.clone());
-    const r = rW / sc, h = fld.h; let any = false;
+    const r = rW / sc, h = fld.h, gens = [];   /* the dabs are queued and run within the frame budget (pump), so a heavy one never holds up a frame */
     for (const set of sets) {
       const a = toL(set.pts[1]), b = toL(set.pts[0]), A = [a.x, a.y, a.z], Bp = [b.x, b.y, b.z];
       const lo = [Math.min(A[0], Bp[0]) - r, Math.min(A[1], Bp[1]) - r, Math.min(A[2], Bp[2]) - r], hi = [Math.max(A[0], Bp[0]) + r, Math.max(A[1], Bp[1]) + r, Math.max(A[2], Bp[2]) + r];
       let box = null;
-      if (op === 'paint' && mode !== 'clay' && mode !== 'dots') box = opShape(fld, [Bp[0] - r, Bp[1] - r, Bp[2] - r], [Bp[0] + r, Bp[1] + r, Bp[2] + r], (x, y, z) => Math.hypot(x - Bp[0], y - Bp[1], z - Bp[2]) - r, 'paint', 0, opts.color, snap, opts.strength);
+      if (op === 'paint' && mode !== 'clay' && mode !== 'dots') box = opShapeGen(fld, [Bp[0] - r, Bp[1] - r, Bp[2] - r], [Bp[0] + r, Bp[1] + r, Bp[2] + r], (x, y, z) => Math.hypot(x - Bp[0], y - Bp[1], z - Bp[2]) - r, 'paint', 0, opts.color, snap, opts.strength);
       else if (mode === 'clay') {
         let nrm = null; if (opts.profile === 'flat') { const pl = surfacePlane(fld, Bp, r * 1.5); nrm = pl ? pl.n : (opts.dirW ? (() => { const d = copyDir(st.work, opts.dirW, set); const dl = L.group.worldToLocal(pw.clone().add(d)).sub(b).normalize(); return [dl.x, dl.y, dl.z]; })() : [0, 1, 0]); }
         const rr = r * (0.35 + 0.65 * opts.press), k = opts.blend * rr, dist = (x, y, z) => sdCapsule(x, y, z, A, Bp, rr, nrm, opts.profile === 'flat' ? 0.85 : 0);
-        if (st.temp) box = opShape(st.temp, lo, hi, dist, 'add', k, opts.color, null);
-        else box = opShape(fld, lo, hi, dist, op === 'subtract' ? 'subtract' : op === 'paint' ? 'paint' : 'add', k, opts.color, snap, opts.strength);
+        if (st.temp) box = opShapeGen(st.temp, lo, hi, dist, 'add', k, opts.color, null);
+        else box = opShapeGen(fld, lo, hi, dist, op === 'subtract' ? 'subtract' : op === 'paint' ? 'paint' : 'add', k, opts.color, snap, opts.strength);
       }
-      else if (mode === 'inflate' || mode === 'deflate') { const sg = (mode === 'deflate' ? -1 : 1) * (op === 'subtract' ? -1 : 1); box = opOffset(fld, Bp, r, sg * Math.min(h * 0.8, opts.strength * r * 0.12), fall, snap); }   /* at most 0.8 voxel a dab, so the stored band always holds the new surface */
-      else if (mode === 'smooth') box = opSmooth(fld, Bp, r, opts.strength * 0.9, fall, snap);
+      else if (mode === 'inflate' || mode === 'deflate') { const sg = (mode === 'deflate' ? -1 : 1) * (op === 'subtract' ? -1 : 1); box = opOffsetGen(fld, Bp, r, sg * Math.min(h * 0.8, opts.strength * r * 0.12), fall, snap); }   /* at most 0.8 voxel a dab, so the stored band always holds the new surface */
+      else if (mode === 'smooth') box = opSmoothGen(fld, Bp, r, opts.strength * 0.9, fall, snap);
       else if (mode === 'flatten' || mode === 'scrape' || mode === 'fill') {
         const pl = surfacePlane(fld, Bp, r); if (!pl) continue;
         const dig = mode === 'scrape' ? r * 0.04 * opts.strength : mode === 'fill' ? -r * 0.04 * opts.strength : 0; pl.p = [pl.p[0] - pl.n[0] * dig, pl.p[1] - pl.n[1] * dig, pl.p[2] - pl.n[2] * dig];
-        box = opPlane(fld, Bp, r, pl, opts.strength * 0.5, mode, fall, snap);
+        box = opPlaneGen(fld, Bp, r, pl, opts.strength * 0.5, mode, fall, snap);
       }
       else if (mode === 'pinch') {   /* pull the clay toward the stroke's line, and cut a soft groove (subtract: a crease) or lay a thin ridge (add) */
         const ab = [Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]], L2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2], s = opts.strength;
-        box = opWarp(fld, lo, hi, r * 0.3, (x, y, z) => { const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - A[0]) * ab[0] + (y - A[1]) * ab[1] + (z - A[2]) * ab[2]) / L2)) : 0; const qx = A[0] + ab[0] * t - x, qy = A[1] + ab[1] * t - y, qz = A[2] + ab[2] * t - z, d = Math.hypot(qx, qy, qz), w = fall(d / r); if (w <= 0 || d < 1e-9) return null; const m = Math.min(d, r * 0.25 * s * w); return [qx / d * m, qy / d * m, qz / d * m]; }, snap) || box;
-        const gr = Math.max(h * 1.2, r * 0.18), b2 = opShape(fld, lo, hi, (x, y, z) => sdCapsule(x, y, z, A, Bp, gr), op === 'subtract' ? 'subtract' : 'add', gr, opts.color, snap); box = box || b2; if (b2) markBox(L, b2);
+        gens.push([opWarpGen(fld, lo, hi, r * 0.3, (x, y, z) => { const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - A[0]) * ab[0] + (y - A[1]) * ab[1] + (z - A[2]) * ab[2]) / L2)) : 0; const qx = A[0] + ab[0] * t - x, qy = A[1] + ab[1] * t - y, qz = A[2] + ab[2] * t - z, d = Math.hypot(qx, qy, qz), w = fall(d / r); if (w <= 0 || d < 1e-9) return null; const m = Math.min(d, r * 0.25 * s * w); return [qx / d * m, qy / d * m, qz / d * m]; }, snap), false]);
+        const gr = Math.max(h * 1.2, r * 0.18), b2 = opShapeGen(fld, lo, hi, (x, y, z) => sdCapsule(x, y, z, A, Bp, gr), op === 'subtract' ? 'subtract' : 'add', gr, opts.color, snap); box = box || b2; if (b2) markBox(L, b2);
       }
       else if (mode === 'grab' || mode === 'smear' || mode === 'melt') {
         let dW; if (mode === 'melt') dW = new V3(0, -1, 0).multiplyScalar(opts.strength * rW * 0.06); else { if (!opts.deltaW) continue; dW = copyDir(st.work, opts.deltaW, set).multiplyScalar(mode === 'smear' ? Math.min(1, opts.strength * 1.2) : 1); }
         const c0 = mode === 'grab' ? toL(set.pts[1]) : b, dL = L.group.worldToLocal(set.pts[0].clone().add(dW)).sub(b), D = [dL.x, dL.y, dL.z], C = [c0.x, c0.y, c0.z], Dl = Math.hypot(D[0], D[1], D[2]); if (Dl < 1e-7) continue;
-        box = opWarp(fld, [C[0] - r, C[1] - r, C[2] - r], [C[0] + r, C[1] + r, C[2] + r], Dl, (x, y, z) => { const w = fall(Math.hypot(x - C[0] - D[0], y - C[1] - D[1], z - C[2] - D[2]) / r); return w > 0 ? [D[0] * w, D[1] * w, D[2] * w] : null; }, snap);
+        box = opWarpGen(fld, [C[0] - r, C[1] - r, C[2] - r], [C[0] + r, C[1] + r, C[2] + r], Dl, (x, y, z) => { const w = fall(Math.hypot(x - C[0] - D[0], y - C[1] - D[1], z - C[2] - D[2]) / r); return w > 0 ? [D[0] * w, D[1] * w, D[2] * w] : null; }, snap);
       }
       else if (mode === 'dots') {   /* a stamp every so often along the stroke, pointing out of the surface (or along the hand) */
         const pl = surfacePlane(fld, Bp, r * 1.5), up = pl ? new V3(...pl.n) : new V3(0, 1, 0), q = new Q().setFromUnitVectors(new V3(0, 1, 0), up.normalize()), sv = fld.sample(Bp[0], Bp[1], Bp[2]), onS = pl && Math.abs(sv) < fld.band * 0.99 ? new V3(Bp[0] - up.x * sv, Bp[1] - up.y * sv, Bp[2] - up.z * sv) : new V3(...Bp), M = new M4().compose(onS, q, new V3(r * 0.5, r * 0.5, r * 0.5)),   /* the stamp sits ON the surface under the fingertip */ Mi = new M4().copy(M).invert(), kind = ({ ball: 'sphere', ring: 'torus', cube: 'cube', spike: 'cone' })[opts.dot] || 'sphere', e = Mi.elements, sc2 = r * 0.5;
         const dist = (x, y, z) => { const X = e[0] * x + e[4] * y + e[8] * z + e[12], Y = e[1] * x + e[5] * y + e[9] * z + e[13], Z = e[2] * x + e[6] * y + e[10] * z + e[14]; return sdPrim(kind, X, Y, Z, 0.15) * sc2; };
         const lo2 = [Bp[0] - r, Bp[1] - r, Bp[2] - r], hi2 = [Bp[0] + r, Bp[1] + r, Bp[2] + r];
-        box = st.temp ? opShape(st.temp, lo2, hi2, dist, 'add', 0, opts.color, null) : opShape(fld, lo2, hi2, dist, op === 'subtract' ? 'subtract' : op === 'paint' ? 'paint' : 'add', h * 0.5, opts.color, snap, opts.strength);
+        box = st.temp ? opShapeGen(st.temp, lo2, hi2, dist, 'add', 0, opts.color, null) : opShapeGen(fld, lo2, hi2, dist, op === 'subtract' ? 'subtract' : op === 'paint' ? 'paint' : 'add', h * 0.5, opts.color, snap, opts.strength);
       }
-      if (box) { any = true; if (!st.temp) markBox(L, box); }
+      if (box) gens.push([box, !!(st.temp && (mode === 'clay' || mode === 'dots'))]);
     }
-    if (any) st.changed = true; const ms = now() - t0; S.lastDabMs = ms; S.dabs++; S.dabMs += ms; return any;
+    gens.forEach(([g, tmp]) => { S.queue.push({ gen: g, st, L, tmp, ms: 0 }); st.jobs++; }); S.dabs++; void t0; return gens.length > 0;
   }
+  /* ---------- the queue: dabs run in order, a slice at a time, within a few ms a frame ---------- */
+  function pump(budgetMs) {
+    const t0 = now(); let n = 0;
+    while (S.queue.length) {
+      const j = S.queue[0], t1 = now(), r = j.gen.next(); j.ms += now() - t1;
+      if (r.done && j.onDone) { S.queue.shift(); S.jobsDone++; try { j.onDone(r.value); } catch (e) { console.warn('clay job', e); } }
+      else if (r.done) { S.queue.shift(); j.st.jobs--; S.dabMs += j.ms; S.jobsDone++; S.lastDabMs = j.ms; if (r.value) { j.st.changed = true; if (j.all) markAll(j.L); else if (!j.tmp) markBox(j.L, r.value); } if (j.st.ending && !j.st.jobs) finishStroke(j.st); }
+      if (++n % 4 === 0 && now() - t0 > budgetMs) break;
+    }
+    S.pumpMs = now() - t0;
+  }
+  const drainQueue = () => { if (S.queue.length) pump(Infinity); };
+  const enqueue = (gen, onDone) => { S.queue.push({ gen, onDone, ms: 0 }); };   /* any sliced job (a generator) with something to do when it ends */
+  const backlog = () => S.queue.length;
+  /* the stroke's undo step is made when its last queued dab has run */
   function strokeEnd(st, label) {
+    st.label = label; if (st.ending) return true;
+    if (st.temp && !st.temp.empty()) { S.queue.push({ gen: opIntersectFieldGen(st.L.field, st.temp, 0, snapFor(st, st.L)), st, L: st.L, tmp: false, ms: 0, all: true }); st.jobs++; st.temp = null; }   /* only what the stroke covered stays: queued like any dab */
+    if (st.half) { S.queue.push({ gen: opIntersectFieldGen(st.L.field, st.half, 0, snapFor(st, st.L)), st, L: st.L, tmp: false, ms: 0, all: true }); st.jobs++; st.half = null; }
+    st.ending = true; if (!st.jobs) return finishStroke(st); return true;
+  }
+  function finishStroke(st) {
+    if (st.done) return false; st.done = true; const label = st.label;
     const L = st.L;
-    if (st.temp && !st.temp.empty()) { const b = opIntersectField(L.field, st.temp, 0, snapFor(st, L)); if (b) { markAll(L); st.changed = true; } }
     if (!st.changed) return false;
     const snaps = [...st.snaps.entries()].filter(([, m]) => m.size); if (!snaps.length) return false;
     const flipTo = list => list.map(([Lr, m]) => { const back = Lr.field.restore(m); markBricks(Lr, [...m.keys()]); return [Lr, back]; });
@@ -206,6 +235,7 @@ export function makeClay(THREE, env) {
   /* ---------- a whole shape at once (a primitive from the shape tool, a stamp, the saw's slab): dist in WORLD space via a matrix, so the layer's own placement is respected ---------- */
   /* snapOuter: the caller's snapshot (a saw sweep, a carve hold): no undo step here, the caller makes one for the whole sweep */
   function applyShapeWorld(L, kind, worldMatrix, mode, blend, color, sym, count, label, round, snapOuter) {
+    drainQueue();
     const sets = sym && sym !== 'off' ? copiesMatrix(L.work, worldMatrix, sym, count) : [worldMatrix], snap = snapOuter || new Map(); let any = false;
     for (const Mw of sets) {
       const Ml = new M4().copy(L.group.matrixWorld).invert().multiply(Mw), Mi = new M4().copy(Ml).invert(), e = Mi.elements, s = new V3(); Ml.decompose(new V3(), new Q(), s); const smin = Math.min(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z));
@@ -218,12 +248,31 @@ export function makeClay(THREE, env) {
     let state = [[L, snap]]; const flip = () => { state = state.map(([Lr, m]) => { const back = Lr.field.restore(m); markBricks(Lr, [...m.keys()]); return [Lr, back]; }); };
     env.pushUndo && env.pushUndo({ label: label || 'shape', undo: flip, redo: flip }); env.dirty && env.dirty(L.work.group); return true;
   }
+  /* one shape inside a stroke (the saw's slab, Carve's ball): queued, sliced, one undo for the sweep. intoTemp: gathered for a keep-inside, applied when the stroke ends. */
+  function shapeStep(st, kind, worldMatrix, mode, blend, sym, count, intoTemp) {
+    const L = st.L; if (L.locked) return false; const sets = sym && sym !== 'off' ? copiesMatrix(L.work, worldMatrix, sym, count) : [worldMatrix];
+    if (intoTemp && !st.temp) st.temp = createField({ h: L.field.h, color: L.field.base });
+    for (const Mw of sets) {
+      const Ml = new M4().copy(L.group.matrixWorld).invert().multiply(Mw), Mi = new M4().copy(Ml).invert(), e = Mi.elements, s = new V3(); Ml.decompose(new V3(), new Q(), s); const smin = Math.min(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z));
+      const dist = (x, y, z) => sdPrim(kind, e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14], 0) * smin;
+      const bb = new THREE.Box3(new V3(-1, -1, -1), new V3(1, 1, 1)).applyMatrix4(Ml);
+      S.queue.push({ gen: opShapeGen(intoTemp ? st.temp : L.field, [bb.min.x, bb.min.y, bb.min.z], [bb.max.x, bb.max.y, bb.max.z], dist, intoTemp ? 'add' : mode, blend, null, intoTemp ? null : snapFor(st, L), 1), st, L, tmp: !!intoTemp, ms: 0 }); st.jobs++;
+    }
+    return true;
+  }
+  /* a whole-side cut: keep only what is on one side of a plane, queued as the stroke ends (dist: height above the plane in the layer's units) */
+  function halfStep(st, dist) { st.half = { sample: dist }; return true; }
   function copiesMatrix(work, Mw, sym, count) {
     const g = work.group; g.updateMatrixWorld(true); const W = g.matrixWorld, Wi = new M4().copy(W).invert(), Ml = new M4().multiplyMatrices(Wi, Mw); let list = [Ml];
     if (sym === 'mirror' || sym === 'both') list = list.concat(list.map(m => new M4().makeScale(-1, 1, 1).multiply(m)));
     if (sym === 'radial' || sym === 'both') { const n = Math.max(2, count || 6), o = []; list.forEach(m => { for (let k = 0; k < n; k++) o.push(new M4().makeRotationY(Math.PI * 2 * k / n).multiply(m)); }); list = o; }
     return list.map(m => new M4().multiplyMatrices(W, m));
   }
+
+  /* ---------- a layer's surface: Substance paints colour, roughness and metal; here colour is painted per point and the finish is per layer (matte, satin, gloss, metal, glow) ---------- */
+  const FINISH = { matte: { roughness: 0.95, metalness: 0, glow: 0 }, satin: { roughness: 0.6, metalness: 0, glow: 0 }, gloss: { roughness: 0.18, metalness: 0, glow: 0 }, metal: { roughness: 0.3, metalness: 0.9, glow: 0 }, glow: { roughness: 0.6, metalness: 0, glow: 0.6 } };
+  function applyFinish(L, f) { const m = L.material, F = FINISH[f] || FINISH.satin; m.roughness = F.roughness; m.metalness = F.metalness; if (m.emissive) { m.emissive.setRGB(F.glow, F.glow * 0.85, F.glow * 0.7); } m.needsUpdate = true; L.finish = f; }
+  function setFinish(L, f) { if (!L) return; const was = L.finish || 'satin'; if (was === f) return; applyFinish(L, f); env.pushUndo && env.pushUndo({ label: 'finish', undo: () => applyFinish(L, was), redo: () => applyFinish(L, f) }); env.dirty && env.dirty(L.work.group); say(L.name + ': ' + f + ' finish.'); }
 
   /* ---------- the layer list ---------- */
   function structural(label, doIt, undoIt) { doIt(); env.pushUndo && env.pushUndo({ label, undo: undoIt, redo: doIt }); }
@@ -238,6 +287,7 @@ export function makeClay(THREE, env) {
   function toggleHide(L) { L = L || S.active; if (!L) return; const v = L.group.visible; structural(v ? 'hide layer' : 'show layer', () => { L.group.visible = !v; }, () => { L.group.visible = v; }); say(L.name + (v ? ' hidden: no tool touches it.' : ' shown.')); }
   function toggleLock(L) { L = L || S.active; if (!L) return; const v = L.locked; structural(v ? 'unlock layer' : 'lock layer', () => { L.locked = !v; }, () => { L.locked = v; }); say(L.name + (v ? ' unlocked.' : ' locked: no tool changes it.')); }
   function duplicate(L) {
+    drainQueue();
     L = L || S.active; if (!L) return null; const w = L.work; let C = null;
     structural('duplicate layer', () => { if (!C) { C = newLayer(w, { field: L.field.clone(), index: w.layers.indexOf(L) + 1, name: L.name + ' copy', matrix: L.group.matrix.clone(), groupId: L.groupId }); } else { w.group.add(C.group); w.layers.splice(w.layers.indexOf(L) + 1, 0, C); layerById.set(C.id, C); } S.active = C; }, () => { w.group.remove(C.group); const i = w.layers.indexOf(C); if (i >= 0) w.layers.splice(i, 1); S.active = L; });
     say(C.name + ' made (on top of ' + L.name + ').'); return C;
@@ -249,6 +299,7 @@ export function makeClay(THREE, env) {
   }
   /* Merge down: the picked layer goes INTO the one below it, as clay (add), as a cutter (subtract: the picked layer's shape is taken out of the one below) or as a keep-only (intersect). One undo step. */
   function mergeDown(mode, blend) {
+    drainQueue();
     const L = S.active; if (!L) return false; const w = L.work, i = w.layers.indexOf(L), D = w.layers[i - 1]; if (!D) { say('There is no layer below ' + L.name + ' to merge into.'); return false; }
     const map = layerMap(D, L), bb = worldBoxOf(L, D); if (!bb && mode !== 'intersect') { say(L.name + ' is empty.'); return false; }
     const snap = new Map(), b = opMergeField(D.field, L.field, map, mode || 'add', (blend || 0) * 0.02, snap, bb && bb[0], bb && bb[1]); markAll(D);
@@ -272,6 +323,7 @@ export function makeClay(THREE, env) {
   function ungroup() { const L = S.active; if (!L || !L.groupId) { say('The picked layer is not in a group.'); return; } const id = L.groupId, mem = L.work.layers.filter(x => x.groupId === id); structural('ungroup', () => mem.forEach(x => { x.groupId = null; }), () => mem.forEach(x => { x.groupId = id; })); say('Group taken apart: ' + mem.length + ' layers on their own again.'); }
   /* Merge group: every layer of the picked layer's group becomes one layer (the lowest), so the group can be used as one cutter or one stamp */
   function mergeGroup() {
+    drainQueue();
     const L = S.active; if (!L || !L.groupId) { say('Pick a layer in a group first.'); return false; } const w = L.work, mem = w.layers.filter(x => x.groupId === L.groupId); if (mem.length < 2) return false;
     const base = mem[0], snap = new Map(); mem.slice(1).forEach(x => { const bb = worldBoxOf(x, base); if (bb) opMergeField(base.field, x.field, layerMap(base, x), 'add', 0, snap, bb[0], bb[1]); }); markAll(base);
     const rest = mem.slice(1), idx = rest.map(x => w.layers.indexOf(x)); const apply = () => { rest.forEach(x => { w.group.remove(x.group); const j = w.layers.indexOf(x); if (j >= 0) w.layers.splice(j, 1); }); S.active = base; }; apply(); let state = snap;
@@ -283,6 +335,7 @@ export function makeClay(THREE, env) {
      (from tick()), so even a big layer never freezes the headset; the old layer stays in view until the new one is ready. */
   const remeshJobs = [];
   function remesh(h) {
+    drainQueue();
     const L = S.active; if (!L) return false; if (remeshJobs.some(j => j.L === L)) { say(L.name + ' is already being remeshed.'); return false; }
     const old = L.field, bb = old.bounds(); if (!bb) return false; const oh = old.h, nf = createField({ h, color: old.base }), list = [];
     for (let bz = Math.floor(bb[2] * oh / h / B) - 1; bz <= Math.floor(bb[5] * oh / h / B) + 1; bz++) for (let by = Math.floor(bb[1] * oh / h / B) - 1; by <= Math.floor(bb[4] * oh / h / B) + 1; by++) for (let bx = Math.floor(bb[0] * oh / h / B) - 1; bx <= Math.floor(bb[3] * oh / h / B) + 1; bx++) list.push([bx, by, bz]);
@@ -311,6 +364,7 @@ export function makeClay(THREE, env) {
   }
   /* Make clay: a closed mesh (a prop, a shape, a baked layer) becomes a clay layer, so every clay tool and boolean works on it. The mesh is hidden, not deleted (undo shows it again). */
   function fromMesh(mesh, h) {
+    drainQueue();
     mesh.updateMatrixWorld(true); const g = mesh.geometry, P = g.attributes.position, I = g.index ? g.index.array : null, nT = (I ? I.length : P.count) / 3, sc = scaleOf(mesh);
     h = h || Math.max(0.003, Math.min(0.012, (new THREE.Box3().setFromObject(mesh).getSize(new V3()).length()) / 120));
     const at = new THREE.Box3().setFromObject(mesh).getCenter(new V3()), w = works.find(x => x.group.parent) || newWork(at, null), L = newLayer(w, { h, name: (mesh.name || 'object').replace(/^cloth_/, '') + ' clay' });
@@ -332,6 +386,7 @@ export function makeClay(THREE, env) {
   function voxelize(f, tris) { const r = voxelizeTris(tris, f.h, f.band, f.base); if (!r) return null; f.write(r, null); return true; }
   /* the triangles of a layer as ONE mesh (welded where chunks meet), in the layer's space: for export, Bake to mesh, Decimate and stamping a figure with clay */
   function bakeGeometry(L) {
+    drainQueue();
     flushLayer(L); const pos = [], nrm = [], col = [], idx = [], ids = new Map(), q = 1e6;
     L.chunks.forEach(m => { const g = m.geometry, P = g.attributes.position.array, Nn = g.attributes.normal.array, C = g.attributes.color.array, I = g.index.array, map = new Int32Array(P.length / 3);
       for (let i = 0; i < P.length / 3; i++) { const k = Math.round(P[i * 3] * q) + ',' + Math.round(P[i * 3 + 1] * q) + ',' + Math.round(P[i * 3 + 2] * q); let id = ids.get(k); if (id === undefined) { id = pos.length / 3; ids.set(k, id); pos.push(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); nrm.push(Nn[i * 3], Nn[i * 3 + 1], Nn[i * 3 + 2]); col.push(C[i * 3], C[i * 3 + 1], C[i * 3 + 2]); } map[i] = id; }
@@ -343,14 +398,14 @@ export function makeClay(THREE, env) {
   /* a stand-in for a work in a save or an export: one plain mesh per visible layer (colours as vertex colours), laid out as the work is */
   function bakedClone(w) {
     const g = new THREE.Group(); g.name = w.name; w.group.updateMatrixWorld(true); g.matrix.copy(w.group.matrixWorld); g.matrix.decompose(g.position, g.quaternion, g.scale);
-    w.layers.forEach(L => { if (!L.group.visible) return; const geo = bakeGeometry(L); if (!geo.index.count) return; const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 })); m.name = L.name; m.matrix.copy(L.group.matrix); m.matrix.decompose(m.position, m.quaternion, m.scale); g.add(m); });
+    w.layers.forEach(L => { if (!L.group.visible) return; const geo = bakeGeometry(L); if (!geo.index.count) return; const m = new THREE.Mesh(geo, L.material.clone()); m.name = L.name; m.matrix.copy(L.group.matrix); m.matrix.decompose(m.position, m.quaternion, m.scale); g.add(m); });
     g.updateMatrixWorld(true); return g;
   }
-  function stats() { let tris = 0, chunks = 0, bytes = 0, bricks = 0; allLayers().forEach(L => { if (!live(L)) return; L.chunks.forEach(m => { tris += m.geometry.index.count / 3; chunks++; }); bytes += L.field.bytes(); bricks += L.field.bricks.size; }); return { works: works.filter(w => w.group.parent).length, layers: allLayers().filter(live).length, tris, chunks, bricks, kB: Math.round(bytes / 1024), pending: pending(), worker: !!S.worker, workerOk: S.workerOk, dabs: S.dabs, dabMsAvg: S.dabs ? S.dabMs / S.dabs : 0, meshMsPerChunk: S.meshCount ? S.meshMs / S.meshCount : 0 }; }
-  function resetStats() { S.dabs = 0; S.dabMs = 0; S.meshMs = 0; S.meshCount = 0; }
+  function stats() { let tris = 0, chunks = 0, bytes = 0, bricks = 0; allLayers().forEach(L => { if (!live(L)) return; L.chunks.forEach(m => { tris += m.geometry.index.count / 3; chunks++; }); bytes += L.field.bytes(); bricks += L.field.bricks.size; }); return { works: works.filter(w => w.group.parent).length, layers: allLayers().filter(live).length, tris, chunks, bricks, kB: Math.round(bytes / 1024), pending: pending(), worker: !!S.worker, workerOk: S.workerOk, dabs: S.dabs, dabMsAvg: S.jobsDone ? S.dabMs / S.jobsDone : 0, queue: S.queue.length, pumpMs: S.pumpMs, meshMsPerChunk: S.meshCount ? S.meshMs / S.meshCount : 0 }; }
+  function resetStats() { S.dabs = 0; S.jobsDone = 0; S.dabMs = 0; S.meshMs = 0; S.meshCount = 0; }
   return {
     S, works, allLayers, live, newWork, newLayer, ensureLayer, hit, nearBox, strokeBegin, strokeStep, strokeEnd, applyShapeWorld, copiesWorld, copiesMatrix, tick, flush, pending,
-    voxelizeField: voxelize, work, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf,
+    voxelizeField: voxelize, work, shapeStep, halfStep, enqueue, detachWork, attachWork, pump, drainQueue, backlog, setFinish, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf,
     get active() { return S.active; }, set active(L) { S.active = L; },
   };
 }

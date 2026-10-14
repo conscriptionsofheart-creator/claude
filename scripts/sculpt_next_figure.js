@@ -126,7 +126,7 @@ export function makeFigureBrushes(THREE, core, env) {
     if (s.mode === 'grab') {
       const cur = mesh.worldToLocal(hand.tip.clone()), d = cur.clone().sub(s.prev); s.prev = cur; const dr = d.applyMatrix4(s.inv);
       s.grabs.forEach(x => { const p = partFor(s, x.name); core.grabMove(st, x.g, new V3(dr.x * x.sign, dr.y, dr.z), { target: p.T, tw: mesh.morphTargetInfluences[p.k] || 1 }); p.rec = mergeRec(p.rec, x.g.rec); mesh.geometry.morphAttributes.position[p.k].needsUpdate = true; });
-      mirrorToShells(mesh); return;
+      mirrorToShells(mesh); return true;
     }
     let delta = null; if (s.mode === 'smear') { const cur = mesh.worldToLocal(hand.tip.clone()); delta = cur.clone().sub(s.prev).applyMatrix4(s.inv); s.prev = cur; if (delta.lengthSq() < 1e-12) return; }
     if (!hit || hit.mesh !== mesh) return;
@@ -142,7 +142,7 @@ export function makeFigureBrushes(THREE, core, env) {
     };
     if (cfg.sym === 'mirror' || cfg.sym === 'both') { const side = K.sideOf(mesh, c), other = side === 'left' ? 'right' : 'left'; one(c, n, base + ' (' + side + ')', 1); one(new V3(-c.x, c.y, c.z), new V3(-n.x, n.y, n.z), base + ' (' + other + ')', -1); }
     else one(c, n, base, 1);
-    mirrorToShells(mesh);
+    mirrorToShells(mesh); return true;   /* a dab happened (the engine ticks the controller) */
   }
   function end(s) {
     hs.delete(s.hand); const mesh = s.mesh, en = s.en, st = en.st;
