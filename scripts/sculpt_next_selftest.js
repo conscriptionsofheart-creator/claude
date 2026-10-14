@@ -226,6 +226,48 @@ export async function runNextTests(T, ctx) {
     res.rod_undo = b(vs.undo() && !vs.assets().length); res.rod_redo = b(vs.redo() && vs.assets().length === 1); cleanup(vs);
   });
 
+  /* ---------- colour wheel, gradients, transparency, skins, looks (Ruth 2026-10-14: "all kinds of color gradients ... skins and shaders on the objects", "a color wheel ... gradients ... transparencies") ---------- */
+  await section('looks', async () => {
+    const { makeTestFigure } = await import('/pe_lib/sculpt_next_testkit.js'), F = makeTestFigure(T); scene.add(F.root); F.root.updateMatrixWorld(true);
+    const vs = fresh({ figure: () => F.root }), W = new V3(0, 1.3, -0.5), tap = (p, n) => { for (let i = 0; i < (n || 2); i++) vs.frame([hand('w', p, true)], 0.016); vs.frame([hand('w', p, false)], 0.016); };
+    const at = (x, y) => W.clone().add(new V3(x, y, 0)), R = 0.075, hexOf = () => vs.cfg.rgb, rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    vs.wheel.open(W.clone(), new V3(0, 1.3, 0.5)); res.lk_wheelOpen = b(vs.wheel.isOpen && !!vs.wheel.root.parent);
+    tap(at(R * 0.8, 0)); const red = rgb(hexOf()); res.lk_wheelRed = b(red[0] > red[1] + 60 && red[0] > red[2] + 60);
+    tap(at(Math.cos(Math.PI * 2 / 3) * R * 0.9, Math.sin(Math.PI * 2 / 3) * R * 0.9)); const green = rgb(hexOf()); res.lk_wheelGreen = b(green[1] > green[0] + 60 && green[1] > green[2] + 60);
+    tap(at(R + 0.025, -0.06)); const dark = rgb(hexOf()); res.lk_lightBarDarker = b(Math.max(...dark) < Math.max(...green) - 40);
+    tap(at(R + 0.025, 0.07)); tap(at(-R - 0.025, -0.0375)); res.lk_clearBar = r2(vs.cfg.alpha); res.lk_clearOk = b(Math.abs(vs.cfg.alpha - 0.25) < 0.03);
+    tap(at(R * 1.2 + 0.03, -R - 0.05)); res.lk_plusStarts = b(vs.cfg.gradient === 'custom' && vs.cfg.gradCustom.split(',').length === 2);
+    tap(at(-R - 0.025, 0.07)); tap(at(Math.cos(Math.PI * 4 / 3) * R * 0.9, Math.sin(Math.PI * 4 / 3) * R * 0.9)); tap(at(R * 1.2 + 0.03, -R - 0.05)); res.lk_gradStops = vs.cfg.gradCustom.split(',').length;
+    tap(at(-R * 1.2, -R - 0.04)); tap(at(-R * 1.2 - 0.03, -R - 0.05)); res.lk_minusRemoves = b(vs.cfg.gradCustom.split(',').length === res.lk_gradStops - 1);
+    const pinchedAway = (() => { const n0 = vs.strokes(); vs.set.mode('clay'); run(vs, line(new V3(0.3, 1.3, -0.5), new V3(0.35, 1.3, -0.5), 8)); return vs.strokes() > n0; })(); res.lk_sculptBesideWheel = b(pinchedAway);
+    tap(at(R + 0.03, R + 0.02)); res.lk_wheelCloses = b(!vs.wheel.isOpen && !vs.wheel.root.parent);
+    /* a see-through gradient on a rod: colour with a fourth value, a material that lets light through */
+    vs.set.gradCustom('#ff2a6d@0,#05d9e8@0.5,#ffffff00@1'); vs.set.gradient('custom'); vs.set.mode('rod'); vs.set.size(2); const rp = []; for (let i = 0; i < 30; i++) rp.push(new V3(-0.4 + i * 0.01, 1.1 + Math.sin(i / 5) * 0.03, -0.5)); run(vs, rp);
+    const rod = vs.assets().filter(a => a.kind === 'rod').pop(); res.lk_rodSeeThrough = b(rod && rod.object.geometry.attributes.color.itemSize === 4 && rod.object.material.transparent);
+    if (rod) { const C = rod.object.geometry.attributes.color.array; res.lk_rodFadesOut = b(C[C.length - 4 * 40 + 3] < 0.2 && C[3] > 0.9); }
+    /* the Gradient tool along a line, and a skin, then undo */
+    vs.set.gradient('sunset'); vs.set.mode('rod'); const rp2 = []; for (let i = 0; i < 30; i++) rp2.push(new V3(-0.4 + i * 0.01, 1.45, -0.5)); run(vs, rp2); const rod2 = vs.assets().filter(a => a.kind === 'rod').pop(), g2 = rod2.object.geometry, col0 = g2.attributes.color.array.slice();
+    vs.set.gradient('ocean'); vs.set.mode('gradient'); vs.set.size(3); const a0 = new V3(-0.4, 1.45, -0.5), a1 = new V3(-0.11, 1.45, -0.5); const drag = []; for (let i = 0; i < 12; i++) drag.push(a0.clone().lerp(a1, i / 11)); run(vs, drag);
+    const c1 = g2.attributes.color.array, ends = [c1.slice(0, 3), c1.slice(c1.length - 3 * 40, c1.length - 3 * 40 + 3)]; res.lk_gradientApplied = b(c1 !== col0 && Math.abs(ends[0][2] - ends[1][2]) + Math.abs(ends[0][0] - ends[1][0]) > 0.15);
+    res.lk_gradientUndo = b(vs.undo() && g2.attributes.color.array === col0 || (g2.attributes.color.array.length === col0.length && g2.attributes.color.array.every((v, i) => v === col0[i])));
+    vs.set.skin('marble'); tap(a0.clone().lerp(a1, 0.5)); vs.flush(); const cm = g2.attributes.color.array; let mn = 9, mx = -9; for (let i = 0; i < cm.length; i += 3) { const l = cm[i] + cm[i + 1] + cm[i + 2]; mn = Math.min(mn, l); mx = Math.max(mx, l); } res.lk_skinMarbleVaries = b(mx - mn > 0.3);
+    /* on clay: the field's colours follow the line */
+    const L = ballLayer(vs, new V3(0.5, 1.3, -0.5), 0.05); vs.set.skin('smooth'); vs.set.gradient('fire'); const d2 = []; for (let i = 0; i < 12; i++) d2.push(new V3(0.45 + i * 0.1 / 11, 1.3, -0.45)); run(vs, d2);
+    const cl = p => { const q = L.group.worldToLocal(p.clone()); return L.field.colorAt(q.x, q.y, q.z); }, cA = cl(new V3(0.452, 1.3, -0.48)), cB = cl(new V3(0.548, 1.3, -0.48)); res.lk_clayGradient = b(Math.abs(cA[1] - cB[1]) > 40); res.lk_clayColours = [cA.map(Math.round).join('/'), cB.map(Math.round).join('/')].join(' -> ');
+    /* the Look tool: chrome on the rod, glass (see-through) on the clay; undo */
+    vs.set.finish('chrome'); vs.set.alpha(1); vs.set.mode('look'); tap(new V3(-0.25, 1.45, -0.5)); res.lk_lookOnRod = b(rod2.object.material.userData.look === 'chrome' && rod2.object.material.metalness === 1);
+    vs.set.finish('glass'); vs.set.alpha(0.5); tap(new V3(0.5, 1.352, -0.5)); res.lk_lookGlassClay = b(L.finish === 'glass' && L.material.transparent && L.material.opacity <= 0.5);
+    vs.set.finish('pearl'); vs.set.alpha(1); tap(new V3(-0.25, 1.45, -0.5)); res.lk_pearl = rod2.object.material.type;
+    res.lk_lookUndo = b(vs.undo() && rod2.object.material.userData.look === 'chrome');
+    /* people keep their own skin */
+    const body = F.body, keep = body.material; vs.set.mode('gradient'); const bp = new V3(); { const P = body.geometry.attributes.position; let bi = 0, bz = -1; for (let i = 0; i < P.count; i++) if (Math.abs(P.getY(i) - 1.25) < 0.04 && P.getZ(i) > bz) { bz = P.getZ(i); bi = i; } bp.fromBufferAttribute(P, bi).applyMatrix4(body.matrixWorld); }
+    const nSay = sayLog.length; tap(bp); vs.flush(); res.lk_peopleKept = b(body.material === keep && sayLog.slice(nSay).some(t => /People keep their own skin/.test(t)));
+    /* the dressed rod saves with its look */
+    const ex = await vs.exportGlb([rod2.object], {}), gl = await new Promise((ok, no) => new ctx.Loader().parse(ex.buffer, '', ok, no)); let mm = null; gl.scene.traverse(o => { if (o.isMesh) mm = o; }); res.lk_glbMetal = mm ? r2(mm.material.metalness) : -1;
+    res.lk_gradients = vs.gradients.length; res.lk_skins = vs.skins.length; res.lk_looks = vs.looks.length;
+    cleanup(vs); vs.assets().forEach(a => a.object.parent && a.object.parent.remove(a.object)); scene.remove(F.root);
+  });
+
   /* ---------- sculpt together: 2 engines, then 4, over an in-page relay (same numbering and echo as the real one); every headset must hold the same work ---------- */
   await section('together', async () => {
     const { makeLocalRelay } = await import('/pe_lib/sculpt_next_collab.js'), { makeTestFigure } = await import('/pe_lib/sculpt_next_testkit.js'), relay = makeLocalRelay(), peers = [];
@@ -265,6 +307,33 @@ export async function runNextTests(T, ctx) {
     const kA = A.F.body.morphTargetDictionary, kB = body.morphTargetDictionary; res.tg_figKeyBoth = b(Object.keys(kA).length === Object.keys(kB).length && Object.keys(kA).length > 1); res.tg_figSame = same([A, B]);
     if (!res.tg_figSame) { const ma = [], mb = []; A.F.root.traverse(o => { if (o.isMesh) ma.push(o); }); B.F.root.traverse(o => { if (o.isMesh) mb.push(o); }); res.tg_figDbg = ma.map((m, i) => { const n = mb[i], g = m.geometry, h = n.geometry, d = (x, y) => { if (!x || !y || x.length !== y.length) return 'len ' + (x && x.length) + '/' + (y && y.length); let mx = 0; for (let k = 0; k < x.length; k++) mx = Math.max(mx, Math.abs(x[k] - y[k])); return mx; }; return m.name + ' pos ' + d(g.attributes.position.array, h.attributes.position.array) + ' morph ' + (g.morphAttributes.position || []).map((t, k) => d(t.array, (h.morphAttributes.position || [])[k] && h.morphAttributes.position[k].array)).join('/') + ' col ' + d(g.attributes.color && g.attributes.color.array, h.attributes.color && h.attributes.color.array); }).join(' | '); }
     res.tg_msgBytes = Math.round(relay.bytes / Math.max(1, relay.sent));
+    /* the emblem BY HAND, together (Ruth 2026-10-14: "if the tools can make that with me in headset with at least one collaborator"): A draws the blue figure's rod while B draws the orange one,
+       each pulls out a head with Ball, A joins the four pieces into one and sets it spinning */
+    { const { EMBLEM } = await import('/pe_lib/sculpt_next_emblem.js'), sc = 0.42 / 1180, O = new V3(-0.6, 1.3, -0.7), toW = p => new V3((p[0] - 625) * sc, (640 - p[1]) * sc, p[2] * sc).add(O);
+      const along = (pts, n) => { const w = pts.map(toW), L = [0]; for (let i = 1; i < w.length; i++) L.push(L[i - 1] + w[i].distanceTo(w[i - 1])); return Array.from({ length: n }, (_, k) => { const d = L[L.length - 1] * k / (n - 1); let i = 1; while (i < L.length - 1 && L[i] < d) i++; return w[i - 1].clone().lerp(w[i], (d - L[i - 1]) / ((L[i] - L[i - 1]) || 1)); }); };
+      const blue = EMBLEM.parts.find(p => p.name === 'Blue figure'), orange = EMBLEM.parts.find(p => p.name === 'Orange figure'), bh = EMBLEM.parts.find(p => p.name === 'Blue head'), oh = EMBLEM.parts.find(p => p.name === 'Orange head');
+      const pa = along(blue.pts, 70), pb = along(orange.pts, 70), n0 = A.vs.assets().length;
+      A.vs.set.mode('rod'); A.vs.set.gradient('emblem blue'); A.vs.set.size(blue.wide * sc * 50); A.vs.set.rodTwist(180); B.vs.set.mode('rod'); B.vs.set.gradient('emblem orange'); B.vs.set.size(orange.wide * sc * 50); B.vs.set.rodTwist(180);
+      const fmE = await together([[A, i => (i < 70 ? [hand('r', pa[i], true)] : [])], [B, i => (i < 70 ? [hand('r', pb[i], true)] : [])]], 72);
+      const head = (p, part, i) => { const c = toW(part.c), r = part.r * sc; return [hand('r', i < 8 ? c.clone().add(new V3(r * i / 7, 0, 0)) : c.clone().add(new V3(r, 0, 0)), i < 8)]; };
+      A.vs.set.mode('ball'); B.vs.set.mode('ball'); await together([[A, i => head(A, bh, i)], [B, i => head(B, oh, i)]], 10);
+      res.tg_handPieces = A.vs.assets().length - n0; res.tg_handPiecesBoth = b(B.vs.assets().length === A.vs.assets().length); res.tg_handFrameMs = st(fmE);
+      const rodsA = A.vs.assets().filter(x => x.kind === 'rod').slice(-2); res.tg_handRodTris = rodsA.map(x => x.object.geometry.index.count / 3).join('+');
+      const cA = rodsA[0] && rodsA[0].object.geometry.attributes.color.array; if (cA) { let r = 0, g = 0, bb = 0; for (let i = 0; i < cA.length; i += 3) { r += cA[i]; g += cA[i + 1]; bb += cA[i + 2]; } res.tg_handBlueIsBlue = b(bb > r * 1.3); }
+      const emb = A.vs.assets().find(x => x.kind === 'emblem'); if (emb) { A.vs.spin(emb.object, 0); await together([[A, () => []]], 90); emb.object.parent.remove(emb.object); B.vs.assets().filter(x => x.kind === 'emblem').forEach(x => x.object.parent && x.object.parent.remove(x.object)); }   /* the button-made emblem out of the way: only the hand-made pieces are joined */
+      A.vs.joinPieces(); await settle(); const pcA = A.vs.assets().find(x => x.kind === 'piece'), pcB = B.vs.assets().find(x => x.kind === 'piece');
+      let meshes = 0; if (pcA) pcA.object.traverse(o => { if (o.isMesh) meshes++; }); res.tg_handJoined = b(!!pcA && !!pcB); res.tg_handJoinedMeshes = meshes;
+      if (pcA) { A.vs.spin(pcA.object, 8); await settle(); await together([[A, () => []], [B, () => []]], 60); res.tg_handSpinBoth = b(A.vs.motion.spinning(pcA.object) && B.vs.motion.spinning(pcB.object) && pcA.object.quaternion.angleTo(pcB.object.quaternion) < 1e-9 && pcA.object.quaternion.angleTo(new Q()) > 0.05);
+        A.vs.spin(pcA.object, 0); await settle(); await together([[A, () => []], [B, () => []]], 100); }
+      res.tg_handSame = same([A, B]);
+      if (pcA) { const ex = await A.vs.exportGlb([pcA.object], {}), gl = await new Promise((ok, no) => new ctx.Loader().parse(ex.buffer, '', ok, no)); let m = 0; gl.scene.traverse(o => { if (o.isMesh) m++; }); res.tg_handGlbMeshes = m; }
+      /* dressing it together: A lays its own gradient (built as the wheel would) as marble over the piece while B gives it the pearl look, 30% see-through */
+      if (pcA) { const bb = new T.Box3().setFromObject(pcA.object), p0 = new V3(bb.min.x, (bb.min.y + bb.max.y) / 2, bb.max.z), p1 = new V3(bb.max.x, (bb.min.y + bb.max.y) / 2, bb.max.z), rodC = pcA.object.children.find(o => /^Rod/.test(o.name)), rc = new T.Box3().setFromObject(rodC).getCenter(new V3());
+        A.vs.set.gradCustom('#ff2a6d@0,#ffd319@0.5,#05d9e8@1'); A.vs.set.gradient('custom'); A.vs.set.skin('marble'); A.vs.set.mode('gradient'); A.vs.set.size(3); B.vs.set.finish('pearl'); B.vs.set.alpha(0.7); B.vs.set.mode('look');
+        const near = fig => { let best = null, bd = 1e9; pcA.object.traverse(o => { if (o.isMesh && /^Rod/.test(o.name)) { const P = o.geometry.attributes.position; for (let i = 0; i < P.count; i += 37) { const w = new V3().fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld), d = w.distanceTo(fig); if (d < bd) { bd = d; best = w; } } } }); return best; };
+        const s0 = near(rc); await together([[A, i => (i < 8 ? [hand('r', s0.clone().add(new V3(0.004 * i, 0, 0)), true)] : [])], [B, i => (i < 3 ? [hand('r', s0.clone(), true)] : [])]], 10); await settle(); void p0; void p1;
+        const mats = x => { const out = []; x.object.traverse(o => { if (o.isMesh) out.push((o.material.userData.look || '-') + (o.material.transparent ? '~' : '')); }); return out.join(','); };
+        res.tg_dressLooks = mats(pcA); res.tg_dressSameLooks = b(mats(pcA) === mats(pcB)); res.tg_dressPearl = b(/pearl~/.test(mats(pcA))); res.tg_dressSame = same([A, B]); } }
     /* four: C and D join and everyone draws at once */
     const Cp = mk('C'), D = mk('D'); Cp.vs.together.start({ transport: relay.connect() }); await settle(); D.vs.together.start({ transport: relay.connect() }); await settle();
     res.tg_people4 = b([A, B, Cp, D].every(p => p.vs.together.people().length === 4)); res.tg_join4Same = same([A, B, Cp, D]);

@@ -4,10 +4,11 @@
    makeClay(THREE, env): env = { say, addObject, removeObject, pushUndo({label, undo, redo}), dirty(obj), workerUrl (optional), noWorker (tests) }. */
 import { createField, voxelizeTris, INSIDE, bkey, opIntersectFieldGen, opShapeGen, opOffsetGen, opSmoothGen, opPlaneGen, opWarpGen, opShape, opOffset, opSmooth, opPlane, opWarp, opIntersectField, opMergeField, surfacePlane, sdCapsule, sdPrim, falloff, bunkey, B } from './sculpt_next_sdf.js';
 import { meshChunk } from './sculpt_next_mesher.js';
+import { makeMaterial } from './sculpt_next_looks.js';
 
 const N = 16;   /* cells per chunk side: 8 cm of clay at the normal 5 mm detail */
 const OFS = 1024, SP = 2048, ckey = (x, y, z) => ((x + OFS) * SP + (y + OFS)) * SP + (z + OFS), cunkey = k => { const z = k % SP, r = (k - z) / SP, y = r % SP, x = (r - y) / SP; return [x - OFS, y - OFS, z - OFS]; };
-export const CLAY_COLORS = [[214, 196, 170], [196, 120, 96], [143, 184, 217], [167, 212, 155], [242, 213, 107], [183, 154, 217], [245, 240, 230], [90, 85, 96]];
+export const CLAY_COLORS = [[214, 196, 170], [196, 120, 96], [143, 184, 217], [167, 212, 155], [242, 213, 107], [183, 154, 217], [245, 240, 230], [90, 85, 96], [74, 44, 255], [138, 60, 255], [255, 138, 30], [255, 36, 36]];   /* the last four are the emblem's: royal blue, violet, orange, crimson */
 
 export function makeClay(THREE, env) {
   env = env || {};
@@ -47,7 +48,7 @@ export function makeClay(THREE, env) {
     opts = opts || {}; S.layerN++;
     const h = opts.h || env.detail && env.detail() || 0.005, color = opts.color || (env.color && env.color()) || CLAY_COLORS[0];
     const g = new THREE.Group(); g.name = (opts.name || 'Layer ' + S.layerN); g.userData.clayLayer = true; g.userData.noMerge = true;
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.0 });
+    const mat = makeMaterial(THREE, 'satin', { vertexColors: true });
     const L = { id: 'L' + S.layerN, name: g.name, work, group: g, field: opts.field || createField({ h, color }), chunks: new Map(), dirty: new Set(), chunkVer: new Map(), material: mat, locked: false, groupId: opts.groupId || null };
     if (opts.matrix) { opts.matrix.decompose(g.position, g.quaternion, g.scale); }
     work.group.add(g); g.updateMatrixWorld(true); const at = opts.index == null ? work.layers.length : opts.index; work.layers.splice(at, 0, L); layerById.set(L.id, L);
@@ -271,9 +272,28 @@ export function makeClay(THREE, env) {
   }
 
   /* ---------- a layer's surface: Substance paints colour, roughness and metal; here colour is painted per point and the finish is per layer (matte, satin, gloss, metal, glow) ---------- */
-  const FINISH = { matte: { roughness: 0.95, metalness: 0, glow: 0 }, satin: { roughness: 0.6, metalness: 0, glow: 0 }, gloss: { roughness: 0.18, metalness: 0, glow: 0 }, metal: { roughness: 0.3, metalness: 0.9, glow: 0 }, glow: { roughness: 0.6, metalness: 0, glow: 0.6 } };
-  function applyFinish(L, f) { const m = L.material, F = FINISH[f] || FINISH.satin; m.roughness = F.roughness; m.metalness = F.metalness; if (m.emissive) { m.emissive.setRGB(F.glow, F.glow * 0.85, F.glow * 0.7); } m.needsUpdate = true; L.finish = f; }
-  function setFinish(L, f) { if (!L) return; const was = L.finish || 'satin'; if (was === f) return; applyFinish(L, f); env.pushUndo && env.pushUndo({ label: 'finish', undo: () => applyFinish(L, was), redo: () => applyFinish(L, f) }); env.dirty && env.dirty(L.work.group); say(L.name + ': ' + f + ' finish.'); }
+  /* a layer's look (sculpt_next_looks.js: matte, satin, gloss, metal, chrome, glow, glass, pearl, velvet, candy, toon) and how see-through it is; one material per layer, shared by its chunks */
+  function applyFinish(L, f, alpha) {
+    const m = makeMaterial(THREE, f || 'satin', { vertexColors: true, name: L.name }); const a = alpha == null ? 1 : alpha;
+    if (a < 0.999) { m.transparent = true; m.opacity = Math.min(m.opacity == null ? 1 : m.opacity, a); m.depthWrite = false; }
+    L.material = m; L.chunks.forEach(c => { c.material = m; }); L.finish = f || 'satin'; L.alpha = a;
+  }
+  function setFinish(L, f, alpha) {
+    if (!L) return; const was = L.finish || 'satin', wasA = L.alpha == null ? 1 : L.alpha, a = alpha == null ? wasA : alpha; if (was === f && Math.abs(wasA - a) < 1e-3) return;
+    applyFinish(L, f, a); env.pushUndo && env.pushUndo({ label: 'look', undo: () => applyFinish(L, was, wasA), redo: () => applyFinish(L, f, a), touch: ['L:' + L.id] }); env.dirty && env.dirty(L.work.group);
+    say(L.name + ': ' + f + (a < 0.999 ? ', ' + Math.round((1 - a) * 100) + '% see-through' : '') + '.');
+  }
+  /* colour a whole layer by a rule (the Gradient tool, a skin): rgbAt(x, y, z) in the layer's own space -> [r, g, b] 0..255, for every stored point near the surface. One undo step. */
+  function* paintFieldByGen(L, rgbAt, label, who) {   /* 48 bricks a slice */
+    const f = L.field, h = f.h, band = f.band * 0.999, snap = new Map(); let n = 0;
+    for (const [k, br] of [...f.bricks.entries()]) { if (br === INSIDE) continue; const [bx, by, bz] = bunkey(k); snap.set(k, { d: br.d.slice(), c: br.c.slice() });
+      for (let z = 0; z < B; z++) for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) { const s = x + B * (y + B * z); if (Math.abs(br.d[s]) >= band) continue; const c = rgbAt((bx * B + x) * h, (by * B + y) * h, (bz * B + z) * h); br.c[s * 3] = c[0]; br.c[s * 3 + 1] = c[1]; br.c[s * 3 + 2] = c[2]; }
+      if (++n % 48 === 0) { markBricks(L, [...snap.keys()].slice(-48)); yield; } }
+    if (!snap.size) return false; f.version++; markAll(L); let state = snap;
+    const flip = () => { state = f.restore(state); markBricks(L, [...state.keys()]); };
+    env.pushUndo && env.pushUndo({ who, label: label || 'gradient', undo: flip, redo: flip, touch: ['L:' + L.id] }); env.dirty && env.dirty(L.work.group); return true;
+  }
+  const paintFieldBy = (L, rgbAt, label) => runGen(paintFieldByGen(L, rgbAt, label));
 
   /* ---------- the layer list ---------- */
   function structural(label, doIt, undoIt, touch) { doIt(); env.pushUndo && env.pushUndo({ label, undo: undoIt, redo: doIt, touch: touch || (S.active ? ['W:' + S.active.work.id] : ['*']) }); }
@@ -415,7 +435,7 @@ export function makeClay(THREE, env) {
   function* exportStateGen(enc) {   /* a layer per slice (yield between), so a big work never holds a frame up */
     const out = { n: [S.layerN, S.workN, S.groupN], works: [] };
     for (const w of works) { if (!w.group.parent) continue; const ws = { id: w.id, name: w.name, t: trs(w.group), layers: [] }; out.works.push(ws);
-      for (const L of w.layers) { ws.layers.push({ id: L.id, name: L.name, t: trs(L.group), vis: L.group.visible, locked: L.locked, groupId: L.groupId, finish: L.finish || 'satin', field: enc(L.field, INSIDE) }); yield; } }
+      for (const L of w.layers) { ws.layers.push({ id: L.id, name: L.name, t: trs(L.group), vis: L.group.visible, locked: L.locked, groupId: L.groupId, finish: L.finish || 'satin', alpha: L.alpha == null ? 1 : L.alpha, field: enc(L.field, INSIDE) }); yield; } }
     return out;
   }
   function* importStateGen(st, dec) {
@@ -423,7 +443,7 @@ export function makeClay(THREE, env) {
     for (const ws of st.works) {
       const w = newWork(null, null); w.id = ws.id; w.name = ws.name; w.group.name = ws.name; setTrs(w.group, ws.t);
       for (const ls of ws.layers) { const f = dec(createField({ h: ls.field.h, band: ls.field.band, color: ls.field.base }), ls.field, INSIDE), L = newLayer(w, { field: f, name: ls.name, groupId: ls.groupId }); setTrs(L.group, ls.t);
-        layerById.delete(L.id); L.id = ls.id; layerById.set(L.id, L); L.group.visible = ls.vis; L.locked = ls.locked; applyFinish(L, ls.finish); yield; }
+        layerById.delete(L.id); L.id = ls.id; layerById.set(L.id, L); L.group.visible = ls.vis; L.locked = ls.locked; applyFinish(L, ls.finish, ls.alpha); yield; }
     }
     [S.layerN, S.workN, S.groupN] = st.n; return true;
   }
@@ -432,7 +452,7 @@ export function makeClay(THREE, env) {
   function resetStats() { S.dabs = 0; S.jobsDone = 0; S.dabMs = 0; S.meshMs = 0; S.meshCount = 0; }
   return {
     S, works, allLayers, live, newWork, newLayer, ensureLayer, hit, nearBox, strokeBegin, strokeStep, strokeEnd, applyShapeWorld, copiesWorld, copiesMatrix, tick, flush, pending,
-    layerById: id => allLayers().find(l => l.id === id) || null, voxelizeField: voxelize, work, shapeStep, halfStep, enqueue, detachWork, attachWork, pump, drainQueue, backlog, setFinish, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf, exportState, importState, exportStateGen, importStateGen,
+    layerById: id => allLayers().find(l => l.id === id) || null, voxelizeField: voxelize, work, shapeStep, halfStep, enqueue, detachWork, attachWork, pump, drainQueue, backlog, setFinish, paintFieldBy, paintFieldByGen, addLayer, pickLayer, stepLayer, toggleHide, toggleLock, duplicate, removeLayer, mergeDown, groupWithBelow, ungroup, mergeGroup, remesh, fromMesh, bakeGeometry, bakedClone, stats, resetStats, markAll, scaleOf, exportState, importState, exportStateGen, importStateGen,
     get active() { return S.active; }, set active(L) { S.active = L; },
   };
 }

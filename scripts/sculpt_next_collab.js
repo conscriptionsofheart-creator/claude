@@ -7,6 +7,7 @@
    Every few seconds each headset sends a short checksum of its work; if one ever differs from the first person's, the first person sends a snapshot and everyone takes it (a mismatch heals itself).
    makeCollab(E): E is the engine's side (sculpt_next_engine.js): newCtx, frame, action, endAllPeers, endPeer, clearUndo, snapshot, restore, checksum, enqueue, presence, say, liveCfg.
    connectWs(url) and makeLocalRelay() give a transport { send(obj), onmessage, onclose, close() }. The relays for a room are tools/sculpt_next_relay.mjs (Node) and tools/sculpt_next_relay.py (Python). */
+import { makeMaterial } from './sculpt_next_looks.js';
 export const SUM_EVERY = 480;   /* a checksum every 480 numbered messages: about every 3 s with two people sculpting */
 const CFG_SKIP = new Set(['on']);
 
@@ -168,14 +169,21 @@ export function decodeGeometry(THREE, o) {
 /* place, turn and size exactly as they are (a matrix taken apart again can come back a hair different, and the checksum would see it) */
 export const trs = o => [o.position.toArray(), o.quaternion.toArray(), o.scale.toArray()];
 export const setTrs = (o, t) => { o.position.fromArray(t[0]); o.quaternion.fromArray(t[1]); o.scale.fromArray(t[2]); o.updateMatrix(); o.updateMatrixWorld(true); };
+/* a material as data: its look (sculpt_next_looks.js) when it has one, else the plain standard values; see-through kept */
+export const matInfo = mt => ({ look: mt.userData && mt.userData.look || null, r: mt.roughness == null ? 0.5 : mt.roughness, mt: mt.metalness || 0, vc: !!mt.vertexColors, col: mt.color ? mt.color.getHex() : 0xffffff, tr: !!mt.transparent, op: mt.opacity == null ? 1 : mt.opacity, dw: mt.depthWrite !== false });
+export function matFrom(THREE, d) {
+  const base = { vertexColors: d.vc, color: new THREE.Color(d.col) };
+  const m = d.look ? makeMaterial(THREE, d.look, base) : new THREE.MeshStandardMaterial({ roughness: d.r, metalness: d.mt, vertexColors: d.vc, color: d.col });
+  m.transparent = !!d.tr; m.opacity = d.op == null ? 1 : d.op; m.depthWrite = d.dw !== false; return m;
+}
 /* an object made by the engine (a rod, the emblem): groups and meshes with standard materials, as data */
 export function encodeObject(o) {
   const out = { k: o.isMesh ? 'mesh' : 'group', name: o.name, t: trs(o), ud: { noMerge: !!(o.userData && o.userData.noMerge) }, c: [] };
-  if (o.isMesh) { const mt = Array.isArray(o.material) ? o.material[0] : o.material; out.g = encodeGeometry(o.geometry); out.mat = { r: mt.roughness == null ? 0.5 : mt.roughness, mt: mt.metalness || 0, vc: !!mt.vertexColors, col: mt.color ? mt.color.getHex() : 0xffffff }; }
+  if (o.isMesh) { const mt = Array.isArray(o.material) ? o.material[0] : o.material; out.g = encodeGeometry(o.geometry); out.mat = matInfo(mt); }
   o.children.forEach(ch => { if (!/^vr/.test(ch.name || '')) out.c.push(encodeObject(ch)); }); return out;
 }
 export function decodeObject(THREE, d) {
-  const o = d.k === 'mesh' ? new THREE.Mesh(decodeGeometry(THREE, d.g), new THREE.MeshStandardMaterial({ roughness: d.mat.r, metalness: d.mat.mt, vertexColors: d.mat.vc, color: d.mat.col })) : new THREE.Group();
+  const o = d.k === 'mesh' ? new THREE.Mesh(decodeGeometry(THREE, d.g), matFrom(THREE, d.mat)) : new THREE.Group();
   o.name = d.name; setTrs(o, d.t); Object.assign(o.userData, d.ud || {}); (d.c || []).forEach(c => o.add(decodeObject(THREE, c))); o.updateMatrixWorld(true); return o;
 }
 /* a clay field as data: the bricks that hold distances (keys, 512 distances, 512 colours each) and the solid ones (keys only) */

@@ -43,32 +43,32 @@ export function* rodArraysGen(path, opts) {
     if (sn < 1e-9) { Nn.push(v.slice()); continue; } const k = ax.map(x => x / sn), ang = Math.atan2(sn, cs), c = Math.cos(ang), s = Math.sin(ang), kd = k[0] * v[0] + k[1] * v[1] + k[2] * v[2], kx = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
     let r = [v[0] * c + kx[0] * s + k[0] * kd * (1 - c), v[1] * c + kx[1] * s + k[1] * kd * (1 - c), v[2] * c + kx[2] * s + k[2] * kd * (1 - c)]; const d = r[0] * b[0] + r[1] * b[1] + r[2] * b[2]; r = [r[0] - b[0] * d, r[1] - b[1] * d, r[2] - b[2] * d]; const l = Math.hypot(...r) || 1; Nn.push(r.map(x => x / l)); }
   yield;
-  const NV = (n + 1) * m, pos = new Float32Array((NV + 2) * 3), col = new Float32Array((NV + 2) * 3), idx = new Uint32Array(n * m * 6 + m * 6);
+  const NV = (n + 1) * m, CS = opts.alphaAt ? 4 : 3, pos = new Float32Array((NV + 2) * 3), col = new Float32Array((NV + 2) * CS), idx = new Uint32Array(n * m * 6 + m * 6);
   for (let i = 0; i <= n; i++) {
     const s = i / n, t = Tn[i], N0 = Nn[i], B0 = [t[1] * N0[2] - t[2] * N0[1], t[2] * N0[0] - t[0] * N0[2], t[0] * N0[1] - t[1] * N0[0]];
     const th = stopsAt(opts.twist || [[0, 0], [1, 0]], s) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);   /* TWIST: the section turns on the axis */
     const Ax = [B0[0] * c + N0[0] * sn, B0[1] * c + N0[1] * sn, B0[2] * c + N0[2] * sn], Ay = [N0[0] * c - B0[0] * sn, N0[1] * c - B0[1] * sn, N0[2] * c - B0[2] * sn];
     const k = Math.max(0, stopsAt(opts.taper || [[0, 1], [1, 1]], s)), kt = Math.max(0, stopsAt(opts.taperThick || opts.taper || [[0, 1], [1, 1]], s));   /* TAPER: the section shrinks, to a point at a tip */
-    const cf = colourAt(opts.front, s), cb = colourAt(opts.back || opts.front, s), Ci = C[i];
+    const cf = colourAt(opts.front, s), cb = colourAt(opts.back || opts.front, s), Ci = C[i], al = CS === 4 ? opts.alphaAt(s) : 1;   /* see-through: a gradient can fade to clear along the rod */
     for (let j = 0; j < m; j++) {
-      const x = sec[j][0] * k, y = sec[j][1] * kt, o = (i * m + j) * 3, w = wF[j], e = eF[j];
+      const x = sec[j][0] * k, y = sec[j][1] * kt, o = (i * m + j) * 3, oc = (i * m + j) * CS, w = wF[j], e = eF[j];
       pos[o] = Ci[0] + Ax[0] * x + Ay[0] * y; pos[o + 1] = Ci[1] + Ax[1] * x + Ay[1] * y; pos[o + 2] = Ci[2] + Ax[2] * x + Ay[2] * y;
-      col[o] = (cb[0] + (cf[0] - cb[0]) * w) * e; col[o + 1] = (cb[1] + (cf[1] - cb[1]) * w) * e; col[o + 2] = (cb[2] + (cf[2] - cb[2]) * w) * e;
+      col[oc] = (cb[0] + (cf[0] - cb[0]) * w) * e; col[oc + 1] = (cb[1] + (cf[1] - cb[1]) * w) * e; col[oc + 2] = (cb[2] + (cf[2] - cb[2]) * w) * e; if (CS === 4) col[oc + 3] = al;
     }
     if (i % per === per - 1) yield;
   }
   let q = 0; for (let i = 0; i < n; i++) { for (let j = 0; j < m; j++) { const a = i * m + j, b = i * m + (j + 1) % m, c2 = a + m, d = b + m; idx[q++] = a; idx[q++] = c2; idx[q++] = b; idx[q++] = b; idx[q++] = c2; idx[q++] = d; } if (i % (per * 2) === per * 2 - 1) yield; }   /* wound so the outside faces out (the section's x, y and the rod's direction make a left-handed set) */
   /* ends: each closed with a fan to its middle (a tapered tip is already a point; a blunt end gets a flat cap) */
-  const cap = (i, ctr, flip) => { let cx = 0, cy = 0, cz = 0; for (let j = 0; j < m; j++) { cx += pos[(i * m + j) * 3]; cy += pos[(i * m + j) * 3 + 1]; cz += pos[(i * m + j) * 3 + 2]; } pos[ctr * 3] = cx / m; pos[ctr * 3 + 1] = cy / m; pos[ctr * 3 + 2] = cz / m; for (let k2 = 0; k2 < 3; k2++) col[ctr * 3 + k2] = col[i * m * 3 + k2]; for (let j = 0; j < m; j++) { const a = i * m + j, b = i * m + (j + 1) % m; if (flip) { idx[q++] = ctr; idx[q++] = a; idx[q++] = b; } else { idx[q++] = ctr; idx[q++] = b; idx[q++] = a; } } };
+  const cap = (i, ctr, flip) => { let cx = 0, cy = 0, cz = 0; for (let j = 0; j < m; j++) { cx += pos[(i * m + j) * 3]; cy += pos[(i * m + j) * 3 + 1]; cz += pos[(i * m + j) * 3 + 2]; } pos[ctr * 3] = cx / m; pos[ctr * 3 + 1] = cy / m; pos[ctr * 3 + 2] = cz / m; for (let k2 = 0; k2 < CS; k2++) col[ctr * CS + k2] = col[i * m * CS + k2]; for (let j = 0; j < m; j++) { const a = i * m + j, b = i * m + (j + 1) % m; if (flip) { idx[q++] = ctr; idx[q++] = a; idx[q++] = b; } else { idx[q++] = ctr; idx[q++] = b; idx[q++] = a; } } };
   cap(0, NV, true); cap(n, NV + 1, false);
-  return { position: pos, color: col, index: idx, length: P.length };
+  return { position: pos, color: col, colorSize: CS, index: idx, length: P.length };
 }
 let LIN = null; const linTable = () => { if (!LIN) { LIN = new Float32Array(4097); for (let i = 0; i <= 4096; i++) { const c = i / 4096; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); } } return LIN; };   /* screen colour -> linear light, looked up */
 /* three.js wrapper: an indexed geometry with smooth normals and vertex colours (turned to linear light on three r152 and later, so the colours look as picked) */
 export function rodGeometry(THREE, path, opts) { const it = rodGeometryGen(THREE, path, opts); let r; do r = it.next(); while (!r.done); return r.value; }
 export function* rodGeometryGen(THREE, path, opts) {
   const r = yield* rodArraysGen(path, opts), g = new THREE.BufferGeometry(); yield;
-  if (parseInt(THREE.REVISION, 10) >= 152 && !(THREE.ColorManagement && THREE.ColorManagement.enabled === false)) { const T = linTable(); for (let i = 0; i < r.color.length; i++) { const c = r.color[i]; r.color[i] = T[c <= 0 ? 0 : c >= 1 ? 4096 : Math.round(c * 4096)]; } }
-  g.setAttribute('position', new THREE.BufferAttribute(r.position, 3)); g.setAttribute('color', new THREE.BufferAttribute(r.color, 3)); g.setIndex(new THREE.BufferAttribute(r.index, 1)); yield; g.computeVertexNormals(); g.computeBoundingBox(); g.computeBoundingSphere();
+  if (parseInt(THREE.REVISION, 10) >= 152 && !(THREE.ColorManagement && THREE.ColorManagement.enabled === false)) { const T = linTable(); const cs = r.colorSize || 3; for (let i = 0; i < r.color.length; i++) { if (cs === 4 && i % 4 === 3) continue; const c = r.color[i]; r.color[i] = T[c <= 0 ? 0 : c >= 1 ? 4096 : Math.round(c * 4096)]; } }
+  g.setAttribute('position', new THREE.BufferAttribute(r.position, 3)); g.setAttribute('color', new THREE.BufferAttribute(r.color, r.colorSize || 3)); g.setIndex(new THREE.BufferAttribute(r.index, 1)); yield; g.computeVertexNormals(); g.computeBoundingBox(); g.computeBoundingSphere();
   return g;
 }
