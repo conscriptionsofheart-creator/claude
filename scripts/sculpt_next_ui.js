@@ -2,7 +2,8 @@
    Sculpt pages), the new picture-tile icons (24 x 24 line drawings in the same style as vr_core.js's, merged into ICONS by the page; a name that already exists there is left alone), and one lesson step
    per tool (Ruth: "every visible tool gets a one-step lesson"). Nothing here flashes or moves by itself.
    Pages: 10 CLAY (the brushes and their settings), 11 SHAPES (primitives, gizmo, booleans, Make clay, Hold), 12 LAYERS (layer list, groups, merge, remesh, save), 13 EXPRESSIONS (shape keys that move). */
-export const ICONS = {
+import { BOLD } from './sculpt_next_icons.js';
+const ICONS_FIRST = {
   clayIc: '<path d="M4 17c2-6 5-9 8-9s5 2 5 5-2 5-5 5H6"/><path d="M14 6c1-2 3-3 5-2"/>',
   flattenIc: '<path d="M3 15h18"/><path d="M5 11c2-3 4-3 7-3s5 0 7 3"/><path d="M12 4v4M10 6l2 2 2-2"/>',
   pinchIc: '<path d="M3 9c4 0 6 2 9 8 3-6 5-8 9-8"/><path d="M6 5l3 3M18 5l-3 3"/>',
@@ -70,18 +71,19 @@ export const ICONS = {
   sculptNextIc: '<path d="M4 15c0-5 4-9 9-9 4 0 7 3 7 6 0 4-3 6-7 6-3 0-4 1-6 1-2 0-3-2-3-4z"/><path d="M17 3l1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
 };
 
+export const ICONS = Object.assign({}, ICONS_FIRST, BOLD);   /* the bold set (sculpt_next_icons.js) replaces the first, thin drawings */
 const OP_IC = { add: 'opAddIc', subtract: 'opSubIc', paint: 'opPaintIc', intersect: 'opIntersectIc' };
 const OP_WORD = { add: 'add', subtract: 'subtract', paint: 'paint', intersect: 'intersect' };
-const SYM_IC = { off: 'symOff', mirror: 'symMirror', radial: 'symRound', both: 'symBoth' }, SYM_WORD = { off: 'off', mirror: 'mirror', radial: '360', both: 'mirror + 360' };
+const SYM_IC = { off: 'nxSymOff', mirror: 'nxSymMirror', radial: 'nxSymRound', both: 'nxSymBoth' }, SYM_WORD = { off: 'off', mirror: 'mirror', radial: '360', both: 'mirror + 360' };
 const PRIM_IC = { sphere: 'primSphere', cube: 'primCube', cylinder: 'primCylinder', cone: 'primCone', torus: 'primTorus', capsule: 'primCapsule' };
 const COLOR_WORD = ['clay', 'terracotta', 'sky', 'leaf', 'sun', 'lilac', 'bone', 'slate', 'royal blue', 'violet', 'orange', 'crimson'];
-const BRUSH = {   /* mode -> [tile label, icon, what the voice says when you pick it] */
+export const BRUSH = {   /* mode -> [tile label, icon, what the voice says when you pick it] */
   clay: ['Clay', 'clayIc', 'Clay: pinch and draw, in the air or on clay; a tube of clay follows your fingertip. On a figure it builds up the skin.'],
-  smooth: ['Smooth', 'smoothIc', 'Smooth: pinch and rub; bumps and lumps even out.'],
+  smooth: ['Smooth', 'nxSmooth', 'Smooth: pinch and rub; bumps and lumps even out.'],
   flatten: ['Flatten', 'flattenIc', 'Flatten: pinch and slide; the surface settles to a flat plane.'],
   pinch: ['Pinch', 'pinchIc', 'Pinch: draw a line; it tightens into a crease (subtract) or a sharp ridge (add).'],
-  inflate: ['Inflate', 'inflateIc', 'Inflate: pinch and hold; the surface swells out (subtract shrinks it).'],
-  grab: ['Grab', 'grabIc', 'Grab: pinch and pull; a soft region comes with your hand.'],
+  inflate: ['Inflate', 'nxInflate', 'Inflate: pinch and hold; the surface swells out (subtract shrinks it).'],
+  grab: ['Grab', 'nxGrab', 'Grab: pinch and pull; a soft region comes with your hand.'],
   scrape: ['Scrape', 'scrapeIc', 'Scrape: pinch and drag; high spots are shaved down flat.'],
   smear: ['Smear', 'smearIc', 'Smear: pinch and drag along the surface; the clay is pushed along with your finger.'],
   dots: ['Dots', 'dotsIc', 'Dots: draw a line; a stamp is pressed in every so often along it.'],
@@ -107,28 +109,28 @@ export function makeMenu(vs, env) {
     10: { title: 'CLAY', rows: ui => [
       brush('clay'), brush('smooth'), brush('flatten'), brush('pinch'), brush('inflate'), brush('grab'), brush('scrape'), brush('smear'), brush('dots'),
       opTile(),
-      { label: 'Size ' + c.size + ' cm', ic: 'brushSize', act: () => { const L = [0.5, 1, 2, 3, 5, 8, 12, 18], n = L.find(x => x > c.size + 1e-6); vs.set.size(n || L[0]); say('Brush size ' + c.size + ' cm. The brush-hand stick also changes it.'); ui.draw(); } },
-      { label: 'Strength ' + c.strength + '%', ic: 'strengthBars', act: () => { const L = [10, 25, 50, 75, 100], n = L.find(x => x > c.strength); vs.set.strength(n || L[0]); say('Strength ' + c.strength + '%'); ui.draw(); } },
+      { label: 'Size ' + c.size + ' cm', ic: 'nxSize', act: () => { const L = [0.5, 1, 2, 3, 5, 8, 12, 18], n = L.find(x => x > c.size + 1e-6); vs.set.size(n || L[0]); say('Brush size ' + c.size + ' cm. The brush-hand stick also changes it.'); ui.draw(); } },
+      { label: 'Strength ' + c.strength + '%', ic: 'nxStrength', act: () => { const L = [10, 25, 50, 75, 100], n = L.find(x => x > c.strength); vs.set.strength(n || L[0]); say('Strength ' + c.strength + '%'); ui.draw(); } },
       { label: 'Symmetry: ' + SYM_WORD[c.sym], ic: SYM_IC[c.sym], on: () => c.sym !== 'off', act: () => { vs.set.sym(cyc(['off', 'mirror', 'radial', 'both'], c.sym)); say(({ off: 'One mark only.', mirror: 'Mirror: every stroke is copied across the middle of the work (on a figure: a left key and a right key).', radial: '360: every stroke is repeated ' + c.count + ' times round the work (on a figure: round the nearest bone).', both: 'Mirror and 360 together.' })[c.sym]); ui.draw(); } },
       { label: 'Steady: ' + (c.stabilize <= 0 ? 'off' : c.stabilize < 0.5 ? 'some' : 'lots'), ic: 'steadyIc', on: () => c.stabilize > 0, act: () => { vs.set.stabilize(c.stabilize <= 0 ? 0.3 : c.stabilize < 0.5 ? 0.8 : 0); say(c.stabilize <= 0 ? 'Steady off: the brush is exactly at your fingertip.' : 'Steady ' + (c.stabilize < 0.5 ? 'some' : 'lots') + ': the brush trails your fingertip on a short string, so a shaky hand draws a clean line.'); ui.draw(); } },
       { label: 'Edge: ' + c.falloff, ic: 'falloffIc', act: () => { vs.set.falloff(cyc(['smooth', 'linear', 'sharp', 'flat'], c.falloff)); say(({ smooth: 'Soft edge.', linear: 'Even edge, straight from the middle to the rim.', sharp: 'Sharp: strong in the middle, little at the rim.', flat: 'Flat: full strength almost to the rim.' })[c.falloff]); ui.draw(); } },
       ...(c.mode === 'clay' ? [{ label: 'Clay: ' + (c.clayProfile === 'flat' ? 'ribbon' : 'round'), ic: 'clayIc', act: () => { vs.set.clayProfile(c.clayProfile === 'flat' ? 'round' : 'flat'); say(c.clayProfile === 'flat' ? 'Clay comes out as a flat ribbon lying on the surface.' : 'Clay comes out as a round tube.'); ui.draw(); } }] : []),
       ...(c.mode === 'dots' ? [{ label: 'Dots: ' + DOT_WORD[c.dot], ic: 'dotsIc', act: () => { vs.set.dot(cyc(['ball', 'ring', 'cube', 'spike'], c.dot)); say('Dots presses ' + DOT_WORD[c.dot] + '.'); ui.draw(); } }] : []),
-      { label: 'Undo stroke', ic: 'undoStroke', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } }, { label: 'Redo stroke', ic: 'redoStroke', act: () => { if (!vs.redo()) say('Nothing to redo'); ui.draw(); } },
+      { label: 'Undo stroke', ic: 'nxUndo', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } }, { label: 'Redo stroke', ic: 'nxRedo', act: () => { if (!vs.redo()) say('Nothing to redo'); ui.draw(); } },
       { label: 'Other hand smooths: ' + (c.supportSmooth ? 'on' : 'off'), ic: 'supportIc', on: () => c.supportSmooth, act: () => { vs.set.supportSmooth(!c.supportSmooth); say(c.supportSmooth ? 'While one hand sculpts, pinch with the other hand to smooth.' : 'Both hands sculpt with the picked brush.'); ui.draw(); } },
       { label: 'Shapes ▸', ic: 'shapesIc', act: () => ui.page(11) }, { label: 'Draw ▸', ic: 'rodIc', act: () => ui.page(14) }, { label: 'Colour ▸', ic: 'wheelIc', act: () => ui.page(15) }, { label: 'Layers ▸', ic: 'layersIc', act: () => ui.page(12) }, { label: 'Together ▸', ic: 'togetherIc', act: () => ui.page(16) }, { label: 'Expressions ▸', ic: 'motionIc', act: () => ui.page(13) },
-      { label: 'Back to brushes', ic: 'undo', act: () => ui.page(0) },
+      { label: 'Back to brushes', ic: 'nxBack', act: () => ui.page(0) },
     ] },
     14: { title: 'DRAW', rows: ui => [
       { label: 'Draw: ' + ({ rod: 'rod', tube: 'tube', ribbon: 'ribbon', ink: 'ink' })[c.rodProfile || 'rod'], ic: 'rodIc', on: () => c.mode === 'rod', act: () => { vs.set.mode('rod'); say(({ rod: 'Rod: pinch and draw; a solid rectangular rod follows, twisted and tapered.', tube: 'Tube: pinch and draw; a round tube follows your finger.', ribbon: 'Ribbon: pinch and draw; a flat ribbon follows, twisting as you set it.', ink: 'Ink: pinch and draw a fine line in the air.' })[c.rodProfile || 'rod'] + ' Size sets how wide.'); ui.draw(); } },
       { label: 'Stroke: ' + (c.rodProfile || 'rod'), ic: 'rodIc', act: () => { vs.set.rodProfile(cyc(['rod', 'tube', 'ribbon', 'ink'], c.rodProfile || 'rod')); vs.set.mode('rod'); say(({ rod: 'Rod: rectangular, twisted, tapered.', tube: 'Tube: round all the way along.', ribbon: 'Ribbon: thin and flat, twisting.', ink: 'Ink: a fine line.' })[c.rodProfile]); ui.draw(); } },
       ...(c.mode === 'rod' && c.rodProfile !== 'tube' && c.rodProfile !== 'ink' ? [{ label: 'Twist: ' + c.rodTwist + '°', ic: 'twistIc', act: () => { const L = [0, 90, 180, 360, 540], n = L.find(x => x > c.rodTwist); vs.set.rodTwist(n == null ? 0 : n); say('The next rod twists ' + c.rodTwist + ' degrees from end to end.'); ui.draw(); } },
         { label: 'Rod end: ' + (c.rodEnd === 'taper' ? 'tapered' : 'blunt'), ic: 'taperIc', act: () => { vs.set.rodEnd(c.rodEnd === 'taper' ? 'blunt' : 'taper'); say(c.rodEnd === 'taper' ? 'The rod\'s end is drawn out and tapered to a point.' : 'The rod keeps its full size to a flat end.'); ui.draw(); } }] : []),
-      { label: 'Size ' + c.size + ' cm', ic: 'brushSize', act: () => { const L = [0.5, 1, 2, 3, 5, 8, 12, 18], n = L.find(x => x > c.size + 1e-6); vs.set.size(n || L[0]); say('Brush size ' + c.size + ' cm. The brush-hand stick also changes it.'); ui.draw(); } },
+      { label: 'Size ' + c.size + ' cm', ic: 'nxSize', act: () => { const L = [0.5, 1, 2, 3, 5, 8, 12, 18], n = L.find(x => x > c.size + 1e-6); vs.set.size(n || L[0]); say('Brush size ' + c.size + ' cm. The brush-hand stick also changes it.'); ui.draw(); } },
       { label: 'Gradient: ' + c.gradient + (c.gradient === 'custom' ? ' (' + String(c.gradCustom || '').split(',').filter(Boolean).length + ')' : ''), ic: 'gradientIc', act: () => { vs.set.gradient(cyc(vs.gradients.filter(n => n !== 'custom' || c.gradCustom), c.gradient)); say('Gradient: ' + c.gradient + '. Rods, balls and the Gradient tool use it' + (c.gradient === 'custom' ? '; build it on the colour wheel with +.' : '.')); if (vs.wheel && vs.wheel.isOpen) vs.wheel.redraw(); ui.draw(); } },
       { label: 'Colour wheel' + (c.alpha < 0.999 ? ' (' + Math.round((1 - c.alpha) * 100) + '% clear)' : ''), ic: 'wheelIc', act: () => { if (vs.wheel && vs.wheel.isOpen) { vs.closeWheel(); say('Colour wheel closed.'); } else vs.openWheel(); ui.draw(); } },
-      { label: 'Undo stroke', ic: 'undoStroke', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } }, { label: 'Redo stroke', ic: 'redoStroke', act: () => { if (!vs.redo()) say('Nothing to redo'); ui.draw(); } },
-      { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
+      { label: 'Undo stroke', ic: 'nxUndo', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } }, { label: 'Redo stroke', ic: 'nxRedo', act: () => { if (!vs.redo()) say('Nothing to redo'); ui.draw(); } },
+      { label: 'Back to clay', ic: 'nxBack', act: () => ui.page(10) },
     ] },
     15: { title: 'COLOUR', rows: ui => [
       { label: 'Colour wheel' + (c.alpha < 0.999 ? ' (' + Math.round((1 - c.alpha) * 100) + '% clear)' : ''), ic: 'wheelIc', act: () => { if (vs.wheel && vs.wheel.isOpen) { vs.closeWheel(); say('Colour wheel closed.'); } else vs.openWheel(); ui.draw(); } },
@@ -137,16 +139,18 @@ export function makeMenu(vs, env) {
       ...(c.mode === 'gradient' ? [{ label: 'Skin: ' + c.skin, ic: 'skinIc', act: () => { vs.set.skin(cyc(vs.skins, c.skin)); say(c.skin === 'smooth' ? 'Smooth: the gradient runs straight along your line.' : 'Skin: ' + c.skin + ', made of your gradient\'s colours, wrapped round the whole object.'); ui.draw(); } }] : []),
       { label: 'Look tool', ic: 'lookIc', on: () => c.mode === 'look', act: () => { vs.set.mode('look'); say('Look tool: pinch an object or clay and it takes the ' + c.finish + ' look' + (c.alpha < 0.999 ? ', ' + Math.round((1 - c.alpha) * 100) + '% see-through (the wheel\'s clear bar)' : '') + '.'); ui.draw(); } },
       { label: 'Look: ' + c.finish, ic: 'finishIc', act: () => { vs.set.finish(cyc(vs.looks, c.finish)); say('Look: ' + c.finish + '. The Look tool puts it on what you pinch' + (vs.clay.active ? '; the picked clay layer has it now.' : '.')); ui.draw(); } },
-      { label: 'Undo stroke', ic: 'undoStroke', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } }, { label: 'Redo stroke', ic: 'redoStroke', act: () => { if (!vs.redo()) say('Nothing to redo'); ui.draw(); } },
-      { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
+      { label: 'Undo stroke', ic: 'nxUndo', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } }, { label: 'Redo stroke', ic: 'nxRedo', act: () => { if (!vs.redo()) say('Nothing to redo'); ui.draw(); } },
+      { label: 'Back to clay', ic: 'nxBack', act: () => ui.page(10) },
     ] },
     16: { title: 'TOGETHER', rows: ui => [
       togetherTile(),
       { label: 'My avatar: ' + c.avatarLook, ic: 'lookIc', act: () => { vs.set.avatarLook(cyc(vs.looks, c.avatarLook)); say('When you sculpt together, the others see you in ' + c.avatarLook + '.'); ui.draw(); } },
       { label: 'My avatar colours: ' + (c.avatarGradient === 'own' ? 'my colour' : c.avatarGradient), ic: 'gradientIc', act: () => { vs.set.avatarGradient(cyc(['own'].concat(vs.gradients.filter(n => n !== 'from Colour' && (n !== 'custom' || c.gradCustom))), c.avatarGradient)); say(c.avatarGradient === 'own' ? 'Your avatar wears your own colour in the room.' : 'Your avatar wears the ' + c.avatarGradient + ' gradient, feet to head.'); ui.draw(); } },
       { label: 'Controls: ' + (c.controls === 'atelier' ? 'Atelier' : 'Substance'), ic: 'controllerIc', on: () => c.controls !== 'atelier', act: () => { vs.set.controls(c.controls === 'atelier' ? 'substance' : 'atelier'); say(c.controls === 'atelier' ? 'Atelier controls: X undoes, Y redoes, the brush stick sizes, a stick click freezes.' : 'Substance controls: hold the support hand\'s lower button for the Palette, its stick undoes and redoes; the tool hand\'s lower button swaps to the partner tool. The tool hand\'s stick click still freezes everything.'); ui.draw(); } },
+      { label: 'Palette: ' + (c.paletteStyle === 'atelier' ? 'wrist menu' : 'big panel'), ic: 'paletteIc', on: () => c.paletteStyle !== 'atelier', act: () => { vs.set.paletteStyle(c.paletteStyle === 'atelier' ? 'substance' : 'atelier'); say(c.paletteStyle === 'atelier' ? 'Palette: the Atelier wrist menu shows when you hold the support hand\'s lower button.' : 'Palette: the big panel floats over your support hand when you hold its lower button. Point with your tool hand and pull the trigger.'); ui.draw(); } },
+      { label: 'Button labels: ' + (c.labels !== false ? 'on' : 'off'), ic: 'labelsIc', on: () => c.labels !== false, act: () => { vs.set.labels(c.labels === false); say(c.labels !== false ? 'Every controller button has a word beside it saying what it does now.' : 'Button labels off. Rest your thumb on a button to hear what it does.'); ui.draw(); } },
       { label: 'Controller map', ic: 'controllerIc', act: () => { say((vs.controlMap || []).map(r => (r[0] === 'tool' ? 'Tool hand ' : 'Support hand ') + (r[1] === 'stick' ? 'stick' : r[1] + ' button') + ': ' + r[2]).join(' ')); } },
-      { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
+      { label: 'Back to clay', ic: 'nxBack', act: () => ui.page(10) },
     ] },
     11: { title: 'SHAPES', rows: ui => [
       { label: 'Place a shape', ic: 'placeShapeIc', on: () => c.mode === 'prim', act: () => { vs.set.mode('prim'); say('Shapes: pinch in the air and a ' + c.prim + ' sits at your fingertip. Pinch inside to move it, a knob to stretch, both hands to resize. Apply shape puts it in.'); ui.draw(); } },
@@ -165,8 +169,8 @@ export function makeMenu(vs, env) {
       { label: 'Make the emblem', ic: 'emblemIc', act: () => { vs.makeEmblem(); ui.draw(); } },
       { label: 'Spin: ' + (spinTarget() && vs.motion.spinning(spinTarget()) ? 'on' : 'off'), ic: 'spinIc', on: () => !!(spinTarget() && vs.motion.spinning(spinTarget())), act: () => { const L = vs.clay.active, A = vs.assets(), g = A.length ? A[A.length - 1].object : L ? L.work.group : null; if (!g) { say('Make some clay, a rod or the emblem first; Spin turns it slowly round.'); return; } const on = vs.motion.spinning(g); vs.spin(g, on ? 0 : 10); say(on ? 'Spin off: it eases to a stop.' : 'Spin on: one slow turn every 10 seconds. Save clay keeps the spin as an animation.'); ui.draw(); } },
       vs.assetBench ? { label: 'Back to the figure', ic: 'backFigureIc', act: () => { vs.endAsset(); ui.draw(); } } : { label: 'New asset', ic: 'assetIc', act: () => { vs.newAsset(); ui.draw(); } },
-      { label: 'Undo stroke', ic: 'undoStroke', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } },
-      { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
+      { label: 'Undo stroke', ic: 'nxUndo', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } },
+      { label: 'Back to clay', ic: 'nxBack', act: () => ui.page(10) },
     ] },
     12: { title: 'LAYERS', rows: ui => {
       const C = vs.clay, list = C.allLayers().filter(C.live), act = C.active;
@@ -174,8 +178,8 @@ export function makeMenu(vs, env) {
       if (list.length > 8) rows.push({ label: 'Next layer', ic: 'layerPickIc', act: () => { C.stepLayer(1); ui.draw(); } });
       return rows.concat([
         { label: 'New layer', ic: 'layerAddIc', act: () => { C.addLayer(); ui.draw(); } },
-        { label: act && !act.group.visible ? 'Show layer' : 'Hide layer', ic: 'eye', act: () => { C.toggleHide(); ui.draw(); } },
-        { label: act && act.locked ? 'Unlock layer' : 'Lock layer', ic: 'lock', act: () => { C.toggleLock(); ui.draw(); } },
+        { label: act && !act.group.visible ? 'Show layer' : 'Hide layer', ic: 'nxEye', act: () => { C.toggleHide(); ui.draw(); } },
+        { label: act && act.locked ? 'Unlock layer' : 'Lock layer', ic: 'nxLock', act: () => { C.toggleLock(); ui.draw(); } },
         { label: 'Duplicate layer', ic: 'dupIc', act: () => { C.duplicate(); ui.draw(); } },
         { label: 'Merge down: ' + (c.op === 'subtract' ? 'cut out' : c.op === 'intersect' ? 'keep shared' : 'add'), ic: 'mergeIc', act: () => { C.mergeDown(c.op === 'subtract' || c.op === 'intersect' ? c.op : 'add', c.blend); ui.draw(); } },
         { label: 'Group with below', ic: 'groupIc', act: () => { C.groupWithBelow(); ui.draw(); } },
@@ -185,18 +189,18 @@ export function makeMenu(vs, env) {
         { label: 'Detail: ' + c.detail + ' mm', ic: 'detailIc', act: () => { vs.set.detail(c.detail <= 3 ? 5 : c.detail <= 5 ? 10 : 3); say('New layers and Remesh use ' + c.detail + ' mm detail' + (c.detail <= 3 ? ' (fine, heavier)' : c.detail >= 10 ? ' (rough, lightest)' : '') + '.'); ui.draw(); } },
         { label: 'Remesh layer', ic: 'remeshIc', act: () => { if (!C.active) { say('Pick a layer first.'); return; } C.remesh(c.detail / 1000); ui.draw(); } },
         { label: 'Budget: ' + (c.budget ? (c.budget / 1000) + 'k' : 'all'), ic: 'budgetIc', act: () => { const L = [0, 5000, 20000, 50000, 100000], n = L[(L.indexOf(c.budget) + 1) % L.length]; vs.set.budget(n); say(n ? 'Saved copies are thinned to ' + (n / 1000) + 'k triangles. The work in the room keeps every triangle, and people are never thinned.' : 'Saved copies keep every triangle.'); ui.draw(); } },
-        { label: 'Save clay', ic: 'floppy', act: () => { const w = C.works.filter(x => x.group.parent && x.layers.length); if (!w.length) { say('There is no clay to save yet.'); return; } say('Saving to the library…'); vs.save((w[0].name || 'Clay') + ' sculpted', { roots: w.map(x => x.group) }).then(() => ui.draw(), e => say('Not saved: ' + (e && e.message || e))); } },
+        { label: 'Save clay', ic: 'saveIc', act: () => { const w = C.works.filter(x => x.group.parent && x.layers.length); if (!w.length) { say('There is no clay to save yet.'); return; } say('Saving to the library…'); vs.save((w[0].name || 'Clay') + ' sculpted', { roots: w.map(x => x.group) }).then(() => ui.draw(), e => say('Not saved: ' + (e && e.message || e))); } },
         { label: 'Keep work', ic: 'keepIc', act: () => { vs.keepWork(); ui.draw(); } },
         { label: 'Open kept work ▸', ic: 'keepIc', act: () => { vs.keptWorks(); ui.page(17); } },
-        { label: 'Undo stroke', ic: 'undoStroke', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } },
-        { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
+        { label: 'Undo stroke', ic: 'nxUndo', act: () => { if (!vs.undo()) say('Nothing to undo'); ui.draw(); } },
+        { label: 'Back to clay', ic: 'nxBack', act: () => ui.page(10) },
       ]);
     } },
     17: { title: 'KEPT WORKS', rows: ui => {
       const list = vs.keptWorks(), when = t => { const d = new Date(t); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); };
       const rows = list.slice(0, 9).map(k => ({ label: k.name.slice(0, 14) + ' · ' + when(k.when), ic: 'keepIc', act: () => { vs.openWork(k.id); ui.page(10); } }));
       if (!rows.length) rows.push({ label: 'Nothing kept yet', ic: 'keepIc', act: () => say('Tap Keep work on the Layers page: your clay, rods and balls are kept on this headset, editable.') });
-      return rows.concat([{ label: 'Back to layers', ic: 'undo', act: () => ui.page(12) }]);
+      return rows.concat([{ label: 'Back to layers', ic: 'nxBack', act: () => ui.page(12) }]);
     } },
     13: { title: 'EXPRESSIONS', rows: ui => {
       const ks = vs.keys(), seen = new Set(), rows = [];
@@ -208,7 +212,7 @@ export function makeMenu(vs, env) {
         { label: 'Plays: ' + (c.pulseRepeat === 1 ? 'once' : c.pulseRepeat + ' times'), ic: 'repeatIc', act: () => { vs.set.pulseRepeat(c.pulseRepeat === 1 ? 3 : 1); say(c.pulseRepeat === 1 ? 'Each tap plays the expression once.' : 'Each tap plays it three times, with a rest between (never faster than once a second).'); ui.draw(); } },
         rec ? { label: 'Stop recording', ic: 'recordFaceIc', on: () => true, act: () => { vs.stopMotion(); ui.draw(); } } : { label: 'Record face', ic: 'recordFaceIc', act: () => { vs.recordMotion(); ui.draw(); } },
         { label: 'Play the move', ic: 'playMoveIc', act: () => { if (!vs.playMotion()) say('Record a move first: Record face, play some expressions, Stop.'); } },
-        { label: 'Back to clay', ic: 'undo', act: () => ui.page(10) },
+        { label: 'Back to clay', ic: 'nxBack', act: () => ui.page(10) },
       ]);
     } },
   };
@@ -228,17 +232,17 @@ export function makeMenu(vs, env) {
 const L1 = (id, name, label, ic, text) => ({ id: 'sculptnext_' + id, name, steps: [{ text, tile: { label, ic } }] });
 export const LESSONS = [
   L1('clay', 'Clay', 'Clay', 'clayIc', 'Pick Clay, then pinch your thumb and finger together in the air and draw: a tube of clay follows your fingertip. Let go to finish the stroke; Undo takes it back.'),
-  L1('smooth', 'Smooth', 'Smooth', 'smoothIc', 'Pick Smooth, pinch on the clay or the skin and rub back and forth: the bumps even out. Hold longer for more.'),
+  L1('smooth', 'Smooth', 'Smooth', 'nxSmooth', 'Pick Smooth, pinch on the clay or the skin and rub back and forth: the bumps even out. Hold longer for more.'),
   L1('flatten', 'Flatten', 'Flatten', 'flattenIc', 'Pick Flatten, pinch on a rounded spot and slide: it settles to the flat plane under your finger.'),
   L1('pinch', 'Pinch', 'Pinch', 'pinchIc', 'Pick Pinch, set Mode to subtract, then draw a line across the surface: it tightens into a crease. In add it makes a sharp ridge.'),
-  L1('inflate', 'Inflate', 'Inflate', 'inflateIc', 'Pick Inflate, pinch on the surface and hold still: it swells out while you hold. Mode subtract shrinks it instead.'),
-  L1('grab', 'Grab', 'Grab', 'grabIc', 'Pick Grab, pinch on the surface and pull your hand away: a soft region comes with you. The Edge tile sets how soft.'),
+  L1('inflate', 'Inflate', 'Inflate', 'nxInflate', 'Pick Inflate, pinch on the surface and hold still: it swells out while you hold. Mode subtract shrinks it instead.'),
+  L1('grab', 'Grab', 'Grab', 'nxGrab', 'Pick Grab, pinch on the surface and pull your hand away: a soft region comes with you. The Edge tile sets how soft.'),
   L1('scrape', 'Scrape', 'Scrape', 'scrapeIc', 'Pick Scrape, pinch and drag across a bump: the high part is shaved off flat, the rest stays.'),
   L1('smear', 'Smear', 'Smear', 'smearIc', 'Pick Smear, pinch and drag along the surface: the clay is pushed along with your finger, like smudging.'),
   L1('dots', 'Dots', 'Dots', 'dotsIc', 'Pick Dots, then draw a line: a ball is pressed in every few centimetres. The Dots tile below switches to rings, cubes or spikes.'),
   L1('mode', 'Add, subtract, paint, intersect', 'Mode: add', 'opAddIc', 'Tap the Mode tile to step through add, subtract, paint and intersect. Every brush and every shape follows it: build up, carve away, only colour, or keep only what you cover.'),
   L1('colour', 'Paint with your colour', 'Mode: add', 'opAddIc', 'Pick a colour on the colour wheel, then tap Mode until it says paint and brush over clay: it takes that colour.'),
-  L1('symmetry', 'Mirror and 360', 'Symmetry: off', 'symOff', 'Tap Symmetry once for mirror, twice for 360, three times for both. Then make one stroke and watch the copies appear with it.'),
+  L1('symmetry', 'Mirror and 360', 'Symmetry: off', 'nxSymOff', 'Tap Symmetry once for mirror, twice for 360, three times for both. Then make one stroke and watch the copies appear with it.'),
   L1('steady', 'Steady', 'Steady: some', 'steadyIc', 'Tap Steady for more or less steadiness. With it on, the brush ball trails your fingertip on a short string, so a shaky line comes out smooth.'),
   L1('edge', 'Edge', 'Edge: smooth', 'falloffIc', 'Tap Edge to choose how the brush fades from its middle to its rim: soft, even, sharp or flat.'),
   L1('shapes', 'Shapes', 'Place a shape', 'placeShapeIc', 'On the Shapes page tap Place a shape, then pinch in the air: a see-through ball sits at your finger. Pinch inside it to move it, then tap Apply shape.'),
@@ -253,8 +257,8 @@ export const LESSONS = [
   L1('clayfigure', 'Clay on a figure', 'Clay on figure: skin', 'clayFigIc', 'Tap to choose what Clay does on a figure: build up the skin itself (kept in a shape key, the skeleton stays as it is) or put new clay on top.'),
   L1('layers', 'Layers', 'Layers ▸', 'layersIc', 'Open Layers: each tile is a layer; tap one to pick it. New strokes go into the picked layer.'),
   L1('newlayer', 'New layer', 'New layer', 'layerAddIc', 'Tap New layer, then make a stroke: it goes on its own layer, which you can hide, move or delete without touching the rest.'),
-  L1('hide', 'Hide a layer', 'Hide layer', 'eye', 'Tap Hide layer to hide the picked layer; no tool touches it while it is hidden. Tap again to show it.'),
-  L1('lock', 'Lock a layer', 'Lock layer', 'lock', 'Tap Lock layer and the picked layer cannot be changed until you unlock it.'),
+  L1('hide', 'Hide a layer', 'Hide layer', 'nxEye', 'Tap Hide layer to hide the picked layer; no tool touches it while it is hidden. Tap again to show it.'),
+  L1('nxLock', 'Lock a layer', 'Lock layer', 'nxLock', 'Tap Lock layer and the picked layer cannot be changed until you unlock it.'),
   L1('duplicate', 'Duplicate', 'Duplicate layer', 'dupIc', 'Tap Duplicate layer: an exact copy sits on top of the picked one, ready to move with Hold.'),
   L1('merge', 'Merge down', 'Merge down: add', 'mergeIc', 'Tap Merge down to put the picked layer into the one below. With Mode subtract it is cut out instead; with intersect only what both share stays.'),
   L1('group', 'Group', 'Group with below', 'groupIc', 'Tap Group with below to join the picked layer and the one under it in a group: Hold moves them together.'),
@@ -264,7 +268,7 @@ export const LESSONS = [
   L1('detail', 'Detail', 'Detail: 5 mm', 'detailIc', 'Tap Detail to choose how fine new layers are: 3 mm for small work, 5 mm normal, 10 mm rough and light.'),
   L1('remesh', 'Remesh', 'Remesh layer', 'remeshIc', 'Pick a layer, set Detail, then tap Remesh layer: the layer is made again at that detail, finer or lighter.'),
   L1('budget', 'Budget', 'Budget: all', 'budgetIc', 'Tap Budget to set how many triangles a saved copy may have. Only the saved copy is thinned, and people are never thinned.'),
-  L1('saveclay', 'Save clay', 'Save clay', 'floppy', 'Tap Save clay to put your clay in the library as a .glb, without taking the headset off.'),
+  L1('saveclay', 'Save clay', 'Save clay', 'saveIc', 'Tap Save clay to put your clay in the library as a .glb, without taking the headset off.'),
   L1('asset', 'New asset', 'New asset', 'assetIc', 'Tap New asset: the figure steps aside and your next clay starts an object of its own for the story. Save clay keeps it in the library; Back to the figure brings the figure back.'),
   L1('finish', 'Look of a clay layer', 'Look: satin', 'finishIc', 'Pick a clay layer on the Layers page, then tap Look to step through matte, satin, gloss, metal, chrome, glow, glass, pearl, velvet, candy and toon.'),
   L1('support', 'Other hand smooths', 'Other hand smooths: on', 'supportIc', 'Sculpt with one hand; without letting go, pinch with your other hand and rub: that hand smooths while the first keeps its brush.'),
@@ -290,11 +294,13 @@ export const LESSONS = [
   L1('looktool', 'Look tool', 'Look tool', 'lookIc', 'Pick a look with the Look tile (gloss, metal, chrome, glass, pearl, velvet, glow, toon...), then pick the Look tool and pinch an object or clay: it takes that look.'),
   L1('join', 'Join pieces', 'Join pieces', 'joinIc', 'When your rods and balls are where you want them, tap Join pieces: they become one object, so Hold moves it, Spin turns it and Save keeps it as one.'),
   L1('controls', 'Substance controls', 'Controls: Substance', 'controllerIc', 'With Controls on Substance, hold your support hand\'s lower button: the Palette appears; point with your tool hand and pull the trigger to choose. Let go and it tucks away.'),
+  L1('palette', 'The Palette', 'Palette: big panel', 'paletteIc', 'Hold your support hand\'s lower button: the big Palette floats over that hand. Point at a tool with your tool hand and pull the trigger.'),
+  L1('labels', 'Button labels', 'Button labels: on', 'labelsIc', 'Look at your controllers in Sculpt: the word beside each button says what it does right now, and it changes when you change tools.'),
   L1('controllermap', 'Controller map', 'Controller map', 'controllerIc', 'Tap Controller map to hear what every button does. Or rest your thumb on a button for half a second: it tells you its job.'),
   L1('avatar', 'Your avatar', 'My avatar: pearl', 'lookIc', 'Tap My avatar to choose how you look to the people you sculpt with: pearl, glow, metal, glass and more; My avatar colours puts a gradient on you, feet to head.'),
   L1('together', 'Sculpt together', 'Sculpt together', 'togetherIc', 'Tap Sculpt together; when your collaborator taps it too, you see them as a person in the look they chose, with their name over them, and everything either of you makes appears for both. Undo takes back only your own steps.'),
-  L1('saw', 'Saw on clay', 'Saw', 'cutIc', 'Pick Saw on the first Sculpt page and sweep it through clay with the trigger held: a slit as wide as the Size ring is cut, the rest stays. It saws figures and objects as before.'),
-  L1('carveclay', 'Carve and stamp on clay', 'Carve', 'carveIc', 'Carve and Stamp work on clay too: sweep Carve to dig a groove, or press a picked object in with Stamp to carve its shape out of the clay.'),
+  L1('saw', 'Saw on clay', 'Saw', 'nxCut', 'Pick Saw on the first Sculpt page and sweep it through clay with the trigger held: a slit as wide as the Size ring is cut, the rest stays. It saws figures and objects as before.'),
+  L1('carveclay', 'Carve and stamp on clay', 'Carve', 'nxCarve', 'Carve and Stamp work on clay too: sweep Carve to dig a groove, or press a picked object in with Stamp to carve its shape out of the clay.'),
 ];
 
 /* every new tile, the page it is on and its picture-tile icon (also written out in sculpt_next_CHANGES.md) */
@@ -303,21 +309,21 @@ export const TILES = [
   ...Object.keys(BRUSH).map(m => ({ page: 'CLAY', label: BRUSH[m][0], ic: BRUSH[m][1] })),
   { page: 'CLAY', label: 'Mode: add / subtract / paint / intersect', ic: 'opAddIc / opSubIc / opPaintIc / opIntersectIc' },
   
-  { page: 'CLAY', label: 'Size N cm', ic: 'brushSize' }, { page: 'CLAY', label: 'Strength N%', ic: 'strengthBars' },
-  { page: 'CLAY', label: 'Symmetry: off / mirror / 360 / mirror + 360', ic: 'symOff / symMirror / symRound / symBoth' },
+  { page: 'CLAY', label: 'Size N cm', ic: 'nxSize' }, { page: 'CLAY', label: 'Strength N%', ic: 'nxStrength' },
+  { page: 'CLAY', label: 'Symmetry: off / mirror / 360 / mirror + 360', ic: 'nxSymOff / nxSymMirror / nxSymRound / nxSymBoth' },
   { page: 'CLAY', label: 'Steady: off / some / lots', ic: 'steadyIc' }, { page: 'CLAY', label: 'Edge: smooth / linear / sharp / flat', ic: 'falloffIc' },
   { page: 'CLAY', label: 'Clay: round / ribbon (when Clay is picked)', ic: 'clayIc' }, { page: 'CLAY', label: 'Dots: balls / rings / cubes / spikes (when Dots is picked)', ic: 'dotsIc' },
    { page: 'CLAY', label: 'Other hand smooths: on / off', ic: 'supportIc' },
-  { page: 'SHAPES', label: 'New asset / Back to the figure', ic: 'assetIc / backFigureIc' }, { page: 'TOGETHER', label: 'Controls: Substance / Atelier', ic: 'controllerIc' }, { page: 'TOGETHER', label: 'Controller map', ic: 'controllerIc' }, { page: 'TOGETHER', label: 'Sculpt together / Together: N people', ic: 'togetherIc' }, { page: 'TOGETHER', label: 'My avatar: <look>', ic: 'lookIc' }, { page: 'TOGETHER', label: 'My avatar colours: my colour / <gradient>', ic: 'gradientIc' },
+  { page: 'SHAPES', label: 'New asset / Back to the figure', ic: 'assetIc / backFigureIc' }, { page: 'TOGETHER', label: 'Controls: Substance / Atelier', ic: 'controllerIc' }, { page: 'TOGETHER', label: 'Palette: big panel / wrist menu', ic: 'paletteIc' }, { page: 'TOGETHER', label: 'Button labels: on / off', ic: 'labelsIc' }, { page: 'TOGETHER', label: 'Controller map', ic: 'controllerIc' }, { page: 'TOGETHER', label: 'Sculpt together / Together: N people', ic: 'togetherIc' }, { page: 'TOGETHER', label: 'My avatar: <look>', ic: 'lookIc' }, { page: 'TOGETHER', label: 'My avatar colours: my colour / <gradient>', ic: 'gradientIc' },
   { page: 'DRAW', label: 'Draw: rod / tube / ribbon / ink, Stroke, Twist: N°, Rod end: tapered / blunt', ic: 'rodIc, twistIc, taperIc' }, { page: 'SHAPES', label: 'Make the emblem', ic: 'emblemIc' }, { page: 'SHAPES', label: 'Ball', ic: 'ballIc' }, { page: 'COLOUR', label: 'Colour wheel (opens the wheel: colour, light, see-through, gradient strip with + and -)', ic: 'wheelIc' }, { page: 'COLOUR', label: 'Gradient: from Colour / emblem blue / emblem orange / sunset / ocean / ... / custom', ic: 'gradientIc' }, { page: 'COLOUR', label: 'Gradient tool', ic: 'gradientIc' }, { page: 'COLOUR', label: 'Skin: smooth / marble / wood / scales / speckle / stripes / spots / camo / clouds (when the Gradient tool is picked)', ic: 'skinIc' }, { page: 'COLOUR', label: 'Look tool', ic: 'lookIc' }, { page: 'COLOUR', label: 'Look: matte / satin / gloss / metal / chrome / glow / glass / pearl / velvet / candy / toon', ic: 'finishIc' }, { page: 'SHAPES', label: 'Join pieces', ic: 'joinIc' }, { page: 'SHAPES', label: 'Spin: on / off', ic: 'spinIc' }, { page: 'CLAY', label: 'Expressions ▸', ic: 'motionIc' },
   { page: 'EXPRESSIONS', label: '▶ <shape key> (one tile per key, tap to play it)', ic: 'pulseIc' }, { page: 'EXPRESSIONS', label: 'Pulse: quick / normal / slow', ic: 'pulseSpeedIc' }, { page: 'EXPRESSIONS', label: 'Plays: once / 3 times', ic: 'repeatIc' },
   { page: 'EXPRESSIONS', label: 'Record face / Stop recording', ic: 'recordFaceIc' }, { page: 'EXPRESSIONS', label: 'Play the move', ic: 'playMoveIc' },
-  { page: 'CLAY', label: 'Undo stroke / Redo stroke', ic: 'undoStroke / redoStroke' }, { page: 'CLAY', label: 'Shapes ▸ / Draw ▸ / Colour ▸ / Layers ▸ / Together ▸ / Expressions ▸', ic: 'shapesIc / rodIc / wheelIc / layersIc / togetherIc / motionIc' }, { page: 'CLAY', label: 'Shapes ▸', ic: 'shapesIc' }, { page: 'CLAY', label: 'Layers ▸', ic: 'layersIc' },
+  { page: 'CLAY', label: 'Undo stroke / Redo stroke', ic: 'nxUndo / nxRedo' }, { page: 'CLAY', label: 'Shapes ▸ / Draw ▸ / Colour ▸ / Layers ▸ / Together ▸ / Expressions ▸', ic: 'shapesIc / rodIc / wheelIc / layersIc / togetherIc / motionIc' }, { page: 'CLAY', label: 'Shapes ▸', ic: 'shapesIc' }, { page: 'CLAY', label: 'Layers ▸', ic: 'layersIc' },
   { page: 'SHAPES', label: 'Place a shape', ic: 'placeShapeIc' }, { page: 'SHAPES', label: 'Shape: sphere / cube / cylinder / cone / torus / capsule', ic: 'primSphere / primCube / primCylinder / primCone / primTorus / primCapsule' },
   { page: 'SHAPES', label: 'Apply shape', ic: 'applyShapeIc' }, { page: 'SHAPES', label: 'Drop shape', ic: 'dropShapeIc' }, { page: 'SHAPES', label: 'Blend: hard / soft / very soft', ic: 'blendIc' },
   { page: 'SHAPES', label: 'Make clay', ic: 'makeClayIc' }, { page: 'SHAPES', label: 'Hold', ic: 'holdIc' }, { page: 'SHAPES', label: 'Hold: whole work / picked layer', ic: 'holdIc' }, { page: 'SHAPES', label: 'Clay on figure: skin / new clay', ic: 'clayFigIc' },
-  { page: 'LAYERS', label: '(one tile per layer, tap to pick)', ic: 'layerPickIc' }, { page: 'LAYERS', label: 'New layer', ic: 'layerAddIc' }, { page: 'LAYERS', label: 'Hide layer / Show layer', ic: 'eye' }, { page: 'LAYERS', label: 'Lock layer / Unlock layer', ic: 'lock' },
+  { page: 'LAYERS', label: '(one tile per layer, tap to pick)', ic: 'layerPickIc' }, { page: 'LAYERS', label: 'New layer', ic: 'layerAddIc' }, { page: 'LAYERS', label: 'Hide layer / Show layer', ic: 'nxEye' }, { page: 'LAYERS', label: 'Lock layer / Unlock layer', ic: 'nxLock' },
   { page: 'LAYERS', label: 'Duplicate layer', ic: 'dupIc' }, { page: 'LAYERS', label: 'Merge down: add / cut out / keep shared', ic: 'mergeIc' }, { page: 'LAYERS', label: 'Group with below', ic: 'groupIc' }, { page: 'LAYERS', label: 'Ungroup', ic: 'ungroupIc' },
   { page: 'LAYERS', label: 'Merge group', ic: 'mergeGroupIc' }, { page: 'LAYERS', label: 'Delete layer', ic: 'trashIc' }, { page: 'LAYERS', label: 'Detail: 3 / 5 / 10 mm', ic: 'detailIc' }, { page: 'LAYERS', label: 'Remesh layer', ic: 'remeshIc' },
-  { page: 'LAYERS', label: 'Budget: all / 5k / 20k / 50k / 100k', ic: 'budgetIc' }, { page: 'LAYERS', label: 'Save clay', ic: 'floppy' }, { page: 'LAYERS', label: 'Keep work / Open kept work ▸', ic: 'keepIc' }, { page: 'KEPT WORKS', label: '(one tile per kept work, tap to open it)', ic: 'keepIc' },
+  { page: 'LAYERS', label: 'Budget: all / 5k / 20k / 50k / 100k', ic: 'budgetIc' }, { page: 'LAYERS', label: 'Save clay', ic: 'saveIc' }, { page: 'LAYERS', label: 'Keep work / Open kept work ▸', ic: 'keepIc' }, { page: 'KEPT WORKS', label: '(one tile per kept work, tap to open it)', ic: 'keepIc' },
 ];

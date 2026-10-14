@@ -81,5 +81,5 @@ export function makeControls(vs, env) {
     if (!rgb) { say('No colour there: touch clay, a rod, a ball or an object.'); return true; }
     const hex = '#' + rgb.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join(''); vs.set.rgb(hex); say('Picked up that colour. Clay, paint, rods and balls take it now.'); return true;
   }
-  return { input, pickColour, get picking() { return picking; }, get selected() { return selected && selected.object.parent ? selected : null }, get paletteOpen() { return P.open; }, map: CONTROL_MAP };
+  return { input, pickColour, get picking() { return picking; }, get selected() { return selected && selected.object.parent ? selected : null }, get paletteOpen() { return P.open; }, get paletteHeld() { return P.held; }, setPaletteOpen(v) { P.open = !!v; if (!v) { P.pinned = false; P.held = false; } }, map: CONTROL_MAP };
 }

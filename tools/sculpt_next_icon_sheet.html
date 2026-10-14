@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#16111e"><canvas id="c"></canvas><script type="module">
+/* dev only: every picture tile, drawn the way vr_core.js draws them (its iconFor wrapper and tile colours), off and on */
+const { ICONS } = await import('/pe_lib/sculpt_next_ui.js?' + Date.now()); const only = new URLSearchParams(location.search).get('only');
+const keys = Object.keys(ICONS).filter(k => !only || only.split(',').includes(k)), cols = 10, cell = 132, cv = document.getElementById('c'); cv.width = cols * cell; cv.height = Math.ceil(keys.length / cols) * cell * 1.0 + 10; const g = cv.getContext('2d');
+const load = (inner, ink) => new Promise(ok => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => ok(null); im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="96" height="96" style="fill:none;stroke:' + ink + ';stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round">' + inner + '</svg>'); });
+for (let i = 0; i < keys.length; i++) { const k = keys[i], x = (i % cols) * cell, y = Math.floor(i / cols) * cell, on = i % 7 === 3, R = 46, cx = x + cell / 2, cy = y + 56;
+  g.beginPath(); g.roundRect(cx - R, cy - R, R * 2, R * 2, R * 0.28); if (on) { const gr = g.createLinearGradient(0, cy - R, 0, cy + R); gr.addColorStop(0, '#e8a866'); gr.addColorStop(1, '#d0863f'); g.fillStyle = gr; } else g.fillStyle = '#2a2036'; g.fill(); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.18)'; g.stroke();
+  const im = await load(ICONS[k], on ? '#20140a' : '#f3eee2'); if (im) g.drawImage(im, cx - R * 0.62, cy - R * 0.62, R * 1.24, R * 1.24);
+  g.fillStyle = '#e9e2f0'; g.font = '13px system-ui'; g.textAlign = 'center'; g.fillText(k, cx, y + cell - 14); }
+window.__result = { n: keys.length };
+</script>

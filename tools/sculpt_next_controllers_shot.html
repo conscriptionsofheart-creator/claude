@@ -1,0 +1,53 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#1a1622"><script type="importmap">{"imports":{"three":"/pe_lib/bst_three_0.186.1.module.js"}}</script><script type="module">
+/* dev only: what you see in the headset in Sculpt, without the headset. Your two Quest controllers (the real models, loaded the way the page loads them), a word at every button,
+   the Palette open over your support hand and your tool hand pointing at it. It also taps the Palette through the same calls the page makes and reports what changed. ?hand=right|left */
+const T = await import('/pe_lib/bst_three_0.186.1.module.js'), eng = await import('/pe_lib/sculpt_next_engine.js?' + Date.now()), { GLTFLoader } = await import('/pe_lib/bst_three_gltfloader_0.186.1.js');
+const V3 = T.Vector3, Q = T.Quaternion, q = new URLSearchParams(location.search), W = +(q.get('w') || 1100), H = +(q.get('h') || 760), prof = q.get('profile') || 'meta-quest-touch-plus';
+const r = new T.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(W, H); r.outputColorSpace = T.SRGBColorSpace; document.body.appendChild(r.domElement);
+const scene = new T.Scene(); scene.background = new T.Color(0x1a1622); scene.add(new T.HemisphereLight(0xffffff, 0x443355, 1.4)); const d = new T.DirectionalLight(0xffffff, 2.2); d.position.set(0.5, 2.5, 1.2); scene.add(d);
+const floor = new T.Mesh(new T.CircleGeometry(3, 64), new T.MeshStandardMaterial({ color: 0x2a2433, roughness: 0.9 })); floor.rotation.x = -Math.PI / 2; scene.add(floor);
+const cam = new T.PerspectiveCamera(Number(q.get('fov') || 62), W / H, 0.01, 20); cam.position.set(0, 1.6, 0.02); cam.lookAt(0.0, 1.27, -0.42); cam.updateMatrixWorld();
+const loader = new GLTFLoader(), loads = [], says = [];
+const vs = eng.createVrSculpt(T, null, { setBench() {}, say: t => says.push(t), figure: () => null, props: () => [], noWorker: true, addObject: o => { if (!o.parent) scene.add(o); }, removeObject: o => { if (o.parent) o.parent.remove(o); },
+  head: () => ({ p: cam.position.clone(), q: cam.quaternion.clone() }), loadAvatar: url => new Promise((ok, no) => { loads.push(url.split('/').pop()); loader.load(url, g => ok(g.scene), undefined, no); }) });
+vs.enter(null); vs.set.stabilize(0);
+/* a little clay on the table, so the brush has something */
+vs.set.mode('clay'); vs.set.size(3); vs.set.rgb('#e8a866'); const hd = (tip, pinch) => ({ id: 'r', tip, dir: new V3(0, 0, -1), quat: new Q(), pinch });
+for (let i = 0; i < 24; i++) vs.frame([hd(new V3(-0.06 + i * 0.005, 1.05 + Math.sin(i / 4) * 0.01, -0.62), true)], 0.016); vs.frame([hd(new V3(0.06, 1.05, -0.62), false)], 0.016); vs.flush();
+/* the two grips, held as hands hold them: rings up, pointing forward and a little down */
+const dolly = new T.Group(); scene.add(dolly);
+const gS = new T.Group(), gT = new T.Group(); dolly.add(gS, gT);
+gS.position.set(-0.2, 1.18, -0.34); gS.rotation.set(-0.35, 0.25, 0.15); gT.position.set(0.17, 1.15, -0.32); gT.rotation.set(-0.15, -0.35, -0.1);
+const pad = () => ({ buttons: Array.from({ length: 7 }, () => ({ pressed: false, touched: false, value: 0 })), axes: [0, 0, 0, 0] }), pS = pad(), pT = pad();
+const S = (role, o, gp, grip) => vs.controls(role, Object.assign({ top: false, bottom: false, click: false, x: 0, y: 0, trigger: 0, grip, gamepad: gp, profiles: [prof, 'oculus-touch-v3'], handed: role === 'support' ? 'left' : 'right' }, o), 0.016);
+const both = (oS, oT) => { S('support', oS || {}, pS, gS); S('tool', oT || {}, pT, gT); };
+both(); const t0 = performance.now(); while (performance.now() - t0 < 15000 && !(vs.controllers.loaded('tool') && vs.controllers.loaded('support'))) { await new Promise(res => setTimeout(res, 50)); both(); }
+const loadedBoth = vs.controllers.loaded('tool') && vs.controllers.loaded('support');
+const out = { loads, loadedBoth, labels: {} };
+['tool', 'support'].forEach(role => { out.labels[role] = {}; ['trigger', 'squeeze', 'stick', 'top', 'bottom'].forEach(k => { out.labels[role][k] = vs.controllers.chipText(role, k); }); });
+/* hold the support hand's lower button: the Palette opens over it */
+pS.buttons[4].pressed = true; both({ bottom: true }); out.paletteOpen = vs.palette.isOpen; out.paletteOnSupport = vs.palette.group.parent === gS;
+both({ bottom: false }); pS.buttons[4].pressed = false; out.pinnedAfterTap = vs.palette.isOpen;
+/* point at a place on the Palette (pixel x, y), the way the page's tool ray would */
+const P = vs.palette, [PW, PH] = P.size, [CW, CH] = P.px;
+const rayTo = (x, y) => { P.group.updateWorldMatrix(true, true); const w = P.panel.localToWorld(new V3((x / CW - 0.5) * PW, (0.5 - y / CH) * PH, 0)), n = new V3(0, 0, 1).transformDirection(P.panel.matrixWorld), o = w.clone().addScaledVector(n, 0.25).add(new V3(0.02, -0.06, 0)); return { o, d: w.clone().sub(o).normalize() }; };
+const find = label => P.hits.find(h => h.label === label);
+const tap = label => { const h = find(label); if (!h) return false; const ray = rayTo(h.x + h.w / 2, h.y + h.h / 2); S('tool', { ray }, pT, gT); const took = P.press(ray, true); P.press(ray, false); both(); return took; };
+P.draw(); out.tabs = P.hits.filter(h => h.x < 240 && h.y > 470).map(h => h.label); out.tiles = P.hits.filter(h => h.x >= 240 && h.y > 470).map(h => h.label);
+out.tapSmooth = tap('Smooth') && vs.cfg.mode === 'smooth';
+out.tapSharp = tap('Edge sharp') && vs.cfg.falloff === 'sharp';
+out.tapMirror = tap('Mirror mirror') && vs.cfg.sym === 'mirror';
+out.tapShapes = tap('Shapes') && P.page === 11; out.shapesTiles = P.hits.filter(h => h.x >= 240 && h.y > 470).map(h => h.label);
+out.tapBack = tap('Clay') && P.page === 10;
+{ const h = find('Size'), y = h.y + h.h / 2, a = rayTo(h.x + 300, y), b = rayTo(h.x + 1000, y); S('tool', { ray: a }, pT, gT); const s0 = vs.cfg.size; P.press(a, true); for (let i = 1; i <= 10; i++) P.hover({ o: a.o.clone().lerp(b.o, i / 10), d: a.d.clone().lerp(b.d, i / 10).normalize() }); P.press(b, false); out.sizeDrag = [s0, vs.cfg.size]; }
+vs.set.mode('clay'); vs.set.size(3); vs.set.sym('off'); vs.set.falloff('smooth');
+/* draw cost: a full redraw of the Palette, and a frame when nothing changed */
+{ const a = []; for (let i = 0; i < 20; i++) { const t = performance.now(); P.draw(); a.push(performance.now() - t); } out.drawMs = +(a.reduce((s, x) => s + x, 0) / a.length).toFixed(2); const b2 = []; for (let i = 0; i < 200; i++) { const t = performance.now(); both(); b2.push(performance.now() - t); } out.idleFrameMs = +(b2.reduce((s, x) => s + x, 0) / b2.length).toFixed(3); }
+/* the picture: tool hand pointing at the Clay tile, trigger half pulled, thumb resting on its lower button */
+const aim = find('Inflate') || find('Clay'); P.group.updateWorldMatrix(true, true); const tgt = P.panel.localToWorld(new V3(((aim.x + aim.w / 2) / CW - 0.5) * PW, (0.5 - (aim.y + aim.h / 2) / CH) * PH, 0)), o0 = new V3(0, 0.012, -0.075).applyMatrix4(gT.matrixWorld), ray = { o: o0, d: tgt.clone().sub(o0).normalize() }; pT.buttons[0].value = 0.55; pT.buttons[0].touched = true; pT.buttons[4].touched = true; pS.buttons[3].touched = true;
+for (let i = 0; i < 12; i++) both({}, { ray }); out.toolTriggerOverPalette = vs.controllers.chipText('tool', 'trigger');
+/* a thin pointer line, as the page draws one */
+{ const g = new T.BufferGeometry().setFromPoints([ray.o, ray.o.clone().addScaledVector(ray.d, ray.o.distanceTo(P.panel.localToWorld(new V3())) * 1.02)]); scene.add(new T.Line(g, new T.LineBasicMaterial({ color: 0xe0975a }))); }
+for (let i = 0; i < 6; i++) { both({}, { ray }); await new Promise(res => setTimeout(res, 140)); }
+r.render(scene, cam); out.says = says.slice(-3); window.__result = out;
+</script>

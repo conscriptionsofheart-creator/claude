@@ -412,6 +412,42 @@ export async function runNextTests(T, ctx) {
     res.ct_mapLines = vs.controlMap.length; cleanup(vs);
   });
 
+  /* ---------- the controllers drawn as themselves with a word at each button, and the Palette on the support hand (Ruth 2026-10-14: "the icons are way too small", "actually useful controllers") ---------- */
+  await section('palette', async () => {
+    const head = { p: new V3(0, 1.6, 0.05), q: new Q().setFromRotationMatrix(new T.Matrix4().lookAt(new V3(0, 1.6, 0.05), new V3(0, 1.25, -0.4), new V3(0, 1, 0))) };
+    const vs = fresh({ head: () => ({ p: head.p.clone(), q: head.q.clone() }), loadAvatar: () => Promise.resolve(null) }), gS = new T.Group(), gT = new T.Group(); scene.add(gS, gT);
+    gS.position.set(-0.2, 1.18, -0.34); gS.rotation.set(-0.35, 0.25, 0.15); gT.position.set(0.17, 1.15, -0.32); gT.rotation.set(-0.15, -0.35, -0.1); scene.updateMatrixWorld(true);
+    const pad = () => ({ buttons: Array.from({ length: 7 }, () => ({ pressed: false, touched: false, value: 0 })), axes: [0, 0, 0, 0] }), pS = pad(), pT = pad(), none = { top: false, bottom: false, click: false, x: 0, y: 0, trigger: 0 };
+    const S = (role, o) => vs.controls(role, Object.assign({}, none, { grip: role === 'support' ? gS : gT, gamepad: role === 'support' ? pS : pT, profiles: ['meta-quest-touch-plus'], handed: role === 'support' ? 'left' : 'right' }, o || {}), 0.016);
+    const both = (oS, oT) => { S('support', oS); S('tool', oT); }, tapB = (role, k) => { S(role, { [k]: true }); S(role, {}); S(role, {}); }, chip = (role, k) => vs.controllers.chipText(role, k);
+    vs.set.mode('clay'); vs.set.op('add'); both(); both();
+    res.pl_models = b(!!vs.controllers.views.tool && !!vs.controllers.views.support && vs.controllers.views.tool.root.parent === gT); res.pl_handHidden = b(vs.showsControllers());
+    res.pl_labelTrigger = chip('tool', 'trigger'); res.pl_labelsOk = b(chip('tool', 'trigger') === 'Clay' && chip('tool', 'bottom') === 'Partner: Take away' && chip('support', 'bottom') === 'Palette (hold)' && /Undo/.test(chip('support', 'stick')) && chip('tool', 'squeeze') === 'Move world');
+    tapB('tool', 'bottom'); both(); res.pl_labelsFollow = b(chip('tool', 'bottom') === 'Partner: Add' && chip('tool', 'trigger') === 'Clay (take away)'); tapB('tool', 'bottom');
+    tapB('support', 'top'); both(); res.pl_gizmoLabel = b(chip('support', 'top') === 'Free brush' && chip('tool', 'trigger') === 'Place shape'); tapB('support', 'top'); both();
+    /* the Palette: hold the support's lower button, it opens on that hand; a quick tap pins it */
+    S('support', { bottom: true }); res.pl_open = b(vs.palette.isOpen && vs.palette.group.parent === gS); S('support', {}); res.pl_pinned = b(vs.palette.isOpen); both();
+    const P = vs.palette, [PW, PH] = P.size, [CW, CH] = P.px;
+    const rayTo = (x, y) => { P.group.updateWorldMatrix(true, true); const w = P.panel.localToWorld(new V3((x / CW - 0.5) * PW, (0.5 - y / CH) * PH, 0)), o = new V3(0, 0.01, -0.07).applyMatrix4(gT.matrixWorld); return { o, d: w.clone().sub(o).normalize() }; };
+    const find = l => P.hits.find(h => h.label === l), tap = l => { const h = find(l); if (!h) return false; const r = rayTo(h.x + h.w / 2, h.y + h.h / 2); S('tool', { ray: r }); const took = P.press(r, true); P.press(r, false); both(); return took; };
+    P.draw(); res.pl_tiles = P.hits.filter(h => h.x >= 240 && h.y > 470).length; res.pl_tabs = P.hits.filter(h => h.x < 240 && h.y > 470).map(h => h.label).join(',');
+    { const h = find('Smooth'), r = rayTo(h.x + h.w / 2, h.y + h.h / 2); S('tool', { ray: r }); S('tool', { ray: r }); res.pl_overLabel = chip('tool', 'trigger'); }
+    res.pl_tapTool = b(tap('Smooth') && vs.cfg.mode === 'smooth'); res.pl_tapChip = b(tap('Edge sharp') && vs.cfg.falloff === 'sharp') * b(tap('Mode take') && vs.cfg.op === 'subtract'); vs.set.op('add');
+    res.pl_tapUndoRedo = b(!!find('Undo') && !!find('Redo'));
+    res.pl_tabLayers = b(tap('Layers') && P.page === 12 && P.hits.some(h => h.label === 'New layer')); tap('Clay');
+    { const h = find('Strength'), y = h.y + h.h / 2, a = rayTo(h.x + 320, y), c = rayTo(h.x + 1180, y); S('tool', { ray: a }); P.press(a, true); for (let i = 1; i <= 8; i++) P.hover({ o: a.o.clone(), d: a.d.clone().lerp(c.d, i / 8).normalize() }); P.press(c, false); res.pl_slider = vs.cfg.strength; res.pl_sliderOk = b(vs.cfg.strength >= 90); }
+    S('tool', { x: 0.9 }); S('tool', {}); res.pl_stickPages = b(P.page === 11); S('tool', { x: -0.9 }); S('tool', {});
+    /* a miss is not the Palette's: the trigger goes back to the clay */
+    res.pl_missFree = b(P.press({ o: new V3(5, 5, 5), d: new V3(0, 1, 0) }, true) === false);
+    /* Colour opens the wheel and puts the Palette away; the next hold opens it again */
+    tap('Colour'); res.pl_colourWheel = b(vs.wheel.isOpen && !P.isOpen); vs.closeWheel(); both(); S('support', { bottom: true }); res.pl_reopens = b(P.isOpen); S('support', {}); S('support', { bottom: true }); S('support', {}); both(); res.pl_tapHides = b(!P.isOpen);
+    { const a = []; for (let i = 0; i < 10; i++) { const t = now(); P.draw(); a.push(now() - t); } res.pl_drawMs = st(a); const f = []; S('support', { bottom: true }); S('support', {}); for (let i = 0; i < 100; i++) { const t = now(); both(); f.push(now() - t); } res.pl_frameMs = st(f); S('support', { bottom: true }); S('support', {}); }
+    vs.set.labels(false); both(); res.pl_labelsOff = b(chip('tool', 'trigger') === null); vs.set.labels(true);
+    vs.set.paletteStyle('atelier'); res.pl_atelierStyle = b(S('support', { bottom: true }).palette === 'show' && !P.isOpen); S('support', {}); vs.set.paletteStyle('substance');
+    vs.set.on && vs.set.on(false); vs.leave(); vs.idle(0.016); res.pl_hiddenAfter = b(!vs.controllers.shown() && !P.isOpen);
+    cleanup(vs); scene.remove(gS, gT);
+  });
+
   /* ---------- from the Quest collaborative-creation report (Ruth 2026-10-14): Draw strokes, Keep work, your stroke at once, who made what, dropping out and rejoining ---------- */
   await section('report', async () => {
     const tick = () => new Promise(r => setTimeout(r, 0));
