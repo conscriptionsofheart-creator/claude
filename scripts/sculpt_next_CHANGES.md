@@ -84,7 +84,7 @@ Not taken yet (each a system of its own): Gravity Sketch's editable surfaces and
 ### How to sculpt together
 
 1. On a computer on the same network as the headsets, start a relay: `node tools/sculpt_next_relay.mjs --key "your words"` or `python3 tools/sculpt_next_relay.py --key "your words"` (nothing to install; port 8787; any number of rooms; only headsets on this network get in, and only with the key). On each headset, put the same words in `localStorage.sculptTogetherKey` once.
-2. Each headset finds it at `ws://<the page's host>:8787/?room=atelier` by default; set another address with `localStorage.sculptTogetherUrl` or the page's `host.collabUrl()`. A page served over **https** needs **wss://** (put the relay behind the same TLS proxy as the page).
+2. Each headset finds it at `ws(s)://<the page's host>:8787/?room=atelier` by default; set another address with `localStorage.sculptTogetherUrl` or the page's `host.collabUrl()`. A page served over **https** (the vr_link door) needs **wss://**: start the relay with the same certificate files as the door, `--cert <cert.pem> --certkey <key.pem>`, and open `https://<computer>:8787/` once in the headset browser to accept the certificate. The room key can come in the page link (`?sculptKey=your+words`, remembered after), so nobody types in the headset.
 3. In the headset: Clay & shapes ▸ **Sculpt together**. With clay of your own in the room the first tap only warns (joining someone shows their work instead); tap again. **My avatar** and **My avatar colours** set how you look to the others.
 
 ## Substance's controls (from Ruth's report, `research/Adobe_Substance_3D_Real_Screenshots_and_Controls.html`, built from Adobe's own controller map)

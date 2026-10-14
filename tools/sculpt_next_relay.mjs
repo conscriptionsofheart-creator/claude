@@ -3,6 +3,8 @@
    room (the sender too), and it says when someone leaves. It never looks inside the work, so any number of rooms can share one relay. Same protocol as tools/sculpt_next_relay.py.
    A page served over https needs wss:// (put the relay behind the same TLS proxy as the page); over http, ws:// is fine. */
 import http from 'node:http';
+import https from 'node:https';
+import fs from 'node:fs';
 import crypto from 'node:crypto';
 
 const arg = k => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
@@ -57,7 +59,9 @@ function peer(sock, roomName) {
   sock.on('close', gone); sock.on('error', gone); sock.on('end', gone);
 }
 
-const server = http.createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('Sculpt together relay. Rooms: ' + ([...rooms].map(([k, r]) => k + ' (' + r.peers.size + ')').join(', ') || 'none') + '\n'); });
+/* a page served over https (the vr_link door) may only open wss://: give the relay the same certificate files: --cert cert.pem --certkey key.pem */
+const CERT = arg('--cert'), CERTKEY = arg('--certkey'), TLS = !!(CERT && CERTKEY);
+const server = (TLS ? (h => https.createServer({ cert: fs.readFileSync(CERT), key: fs.readFileSync(CERTKEY) }, h)) : (h => http.createServer(h)))((req, res) => { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('Sculpt together relay. Rooms: ' + ([...rooms].map(([k, r]) => k + ' (' + r.peers.size + ')').join(', ') || 'none') + '\n'); });
 server.on('upgrade', (req, sock) => {
   const key = req.headers['sec-websocket-key']; if (!key || String(req.headers.upgrade || '').toLowerCase() !== 'websocket') { sock.destroy(); return; }
   const q = new URL(req.url, 'http://x').searchParams, refuse = why => { log('refused', sock.remoteAddress, why); try { sock.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); } catch (e) { /* gone */ } };
@@ -67,4 +71,4 @@ server.on('upgrade', (req, sock) => {
   sock.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n'); sock.setNoDelay(true);
   const room = (new URL(req.url, 'http://x').searchParams.get('room') || 'atelier').slice(0, 64); peer(sock, room);
 });
-server.listen(port, () => { log('Sculpt together relay on ws://0.0.0.0:' + port + '/?room=atelier' + (KEY ? '&key=…' : '')); if (!KEY) log('No room key: anyone on this network who knows the address can join. Start with --key <words> to make the room private.'); if (PUBLIC) log('--public: headsets from outside this network are allowed too.'); });
+server.listen(port, () => { log('Sculpt together relay on ' + (TLS ? 'wss' : 'ws') + '://0.0.0.0:' + port + '/?room=atelier' + (KEY ? '&key=…' : '')); if (!KEY) log('No room key: anyone on this network who knows the address can join. Start with --key <words> to make the room private.'); if (PUBLIC) log('--public: headsets from outside this network are allowed too.'); });

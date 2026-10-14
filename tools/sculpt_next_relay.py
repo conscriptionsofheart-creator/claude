@@ -2,7 +2,7 @@
 """sculpt_next_relay.py: the room relay for Sculpt together (lib/sculpt_next_collab.js), Python standard library only:  python3 tools/sculpt_next_relay.py [port]   (default 8787)
 Same protocol as tools/sculpt_next_relay.mjs: each headset gets an id, every message is NUMBERED and sent to everyone in the room (the sender too), a leaving headset is announced.
 Headsets connect to ws://<this computer>:8787/?room=atelier."""
-import asyncio, base64, hashlib, json, os, struct, sys
+import asyncio, base64, hashlib, json, os, ssl, struct, sys
 from urllib.parse import urlparse, parse_qs
 
 MAX = 64 * 1024 * 1024
@@ -99,8 +99,13 @@ async def handle(reader, writer):
 
 async def main():
     port = int(ARGS[0]) if ARGS and not ARGS[0].startswith('--') else int(os.environ.get('PORT', 8787))
-    srv = await asyncio.start_server(handle, '0.0.0.0', port)
-    log('Sculpt together relay on ws://0.0.0.0:%d/?room=atelier%s' % (port, '&key=...' if KEY else ''))
+    cert = ARGS[ARGS.index('--cert') + 1] if '--cert' in ARGS else None
+    certkey = ARGS[ARGS.index('--certkey') + 1] if '--certkey' in ARGS else None
+    ctx = None
+    if cert and certkey:   # a page served over https (the vr_link door) may only open wss://: the same certificate files
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); ctx.load_cert_chain(cert, certkey)
+    srv = await asyncio.start_server(handle, '0.0.0.0', port, ssl=ctx)
+    log('Sculpt together relay on %s://0.0.0.0:%d/?room=atelier%s' % ('wss' if ctx else 'ws', port, '&key=...' if KEY else ''))
     if not KEY: log('No room key: anyone on this network who knows the address can join. Start with --key <words> to make the room private.')
     async with srv: await srv.serve_forever()
 
