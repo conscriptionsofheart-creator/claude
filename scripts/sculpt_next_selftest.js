@@ -349,6 +349,40 @@ export async function runNextTests(T, ctx) {
     [A, Cp, D].forEach(p => p.vs.together.stop()); await settle(); peers.forEach(p => { cleanup(p.vs); scene.remove(p.world); });
   });
 
+  /* ---------- two people as avatars, each in their own look, sculpting together (Ruth 2026-10-14: "two people in the make human avatars with a shader on each creating together") ---------- */
+  await section('avatars', async () => {
+    const { makeLocalRelay } = await import('/pe_lib/sculpt_next_collab.js'), { makeTestFigure, makeTestMakeHuman } = await import('/pe_lib/sculpt_next_testkit.js'), relay = makeLocalRelay(), people = [];
+    const lookFrom = (eye, at) => new Q().setFromRotationMatrix(new T.Matrix4().lookAt(eye, at, new V3(0, 1, 0)));
+    const mk = (name, head, loads) => { const world = new T.Group(); scene.add(world); const F = makeTestFigure(T); world.add(F.root); const pose = { p: head.clone(), q: lookFrom(head, new V3(0, 1.3, -0.5)) }, says = [];
+      const vs = ctx.createVrSculpt(T, null, mkHost({ figure: () => F.root, say: t => says.push(t), addObject: o => { if (!o.parent) world.add(o); }, head: () => ({ p: pose.p.clone(), q: pose.q.clone() }), loadAvatar: loads }));
+      vs.enter(F.root); vs.set.stabilize(0); const p = { name, vs, world, pose, says }; people.push(p); return p; };
+    let loaded = 0; const A = mk('Ruth', new V3(0, 1.6, 0.05), url => { loaded++; return url === 'test:makehuman' ? makeTestMakeHuman(T).root : null; }), B = mk('Sam', new V3(0.4, 1.55, -0.78), () => null);
+    const tick = () => new Promise(r => setTimeout(r, 0)), settle = async () => { for (let k = 0; k < 2000; k++) { await tick(); people.forEach(p => p.vs.flush()); if (relay.idle() && people.every(p => p.vs.together.waiting === 0)) { await tick(); if (relay.idle()) return; } } };
+    A.vs.set.avatarLook('glow'); A.vs.set.avatarGradient('sunset'); B.vs.set.avatarLook('pearl'); B.vs.set.avatarUrl('test:makehuman');
+    A.vs.together.start({ transport: relay.connect(), name: 'Ruth' }); await settle(); B.vs.together.start({ transport: relay.connect(), name: 'Sam' }); await settle();
+    /* both sculpt the emblem's parts at once: Ruth a clay lump, Sam a rod; their heads bob a little as people's do */
+    A.vs.set.mode('clay'); A.vs.set.size(2); B.vs.set.mode('rod'); B.vs.set.gradient('emblem orange'); B.vs.set.size(2);
+    const handA = i => new V3(-0.08 + i * 0.004, 1.3, -0.42), handB = i => new V3(0.12 + Math.cos(i / 59 * Math.PI) * 0.08, 1.25 + Math.sin(i / 59 * Math.PI) * 0.12, -0.6), fm = [];
+    for (let i = 0; i < 70; i++) {
+      A.pose.p.y = 1.6 + Math.sin(i / 9) * 0.01; B.pose.p.y = 1.55 + Math.cos(i / 11) * 0.01;
+      let t = now(); A.vs.frame(i < 60 ? [hand('r', handA(i), true), hand('l', new V3(-0.25, 1.15, -0.25), false)] : [hand('r', handA(59), false)], 0.016); fm.push(now() - t);
+      t = now(); B.vs.frame(i < 60 ? [hand('r', handB(i), true)] : [hand('r', handB(59), false)], 0.016); fm.push(now() - t); await tick();
+    }
+    for (let i = 0; i < 40; i++) { A.vs.frame([hand('r', handA(59), false), hand('l', new V3(-0.25, 1.15, -0.25), false)], 0.016); B.vs.frame([hand('r', handB(59), false)], 0.016); await tick(); } await settle();
+    res.av_frameMs = st(fm); res.av_same = b(A.vs.together.checksum() === B.vs.together.checksum()); res.av_made = b(A.vs.clay.works.some(w => w.layers.length) && A.vs.assets().some(a => a.kind === 'rod') && B.vs.assets().some(a => a.kind === 'rod'));
+    /* on Ruth's headset: Sam is his MakeHuman figure, in pearl, head where his head is, right wrist at his hand */
+    const onA = A.vs.together.avatars(), sam = onA[0]; res.av_onRuth = onA.map(a => a.kind + ':' + a.look).join(','); res.av_loads = loaded;
+    if (sam && sam.av.ok) { const hb = new V3().setFromMatrixPosition(sam.av.bones.head.matrixWorld); res.av_samHeadCm = r2(hb.distanceTo(B.pose.p) * 100); const w = sam.av.wrist('R') || sam.av.wrist('L'); res.av_samWristCm = r2(w.distanceTo(handB(59)) * 100); res.av_samRigged = b(sam.kind === 'rigged' && res.av_samHeadCm < 8 && res.av_samWristCm < 4); }
+    /* on Sam's headset: Ruth is the built-in figure, glowing in sunset, head and right hand where hers are */
+    const onB = B.vs.together.avatars(), ruth = onB[0]; res.av_onSam = onB.map(a => a.kind + ':' + a.look).join(',');
+    if (ruth) { const P = ruth.av.parts; res.av_ruthHeadCm = r2(P.head.position.distanceTo(A.pose.p) * 100); const hr = [P.handR.position, P.handL.position].map(p => p.distanceTo(handA(59))); res.av_ruthHandCm = r2(Math.min(...hr) * 100);
+      const C = P.torso.geometry.attributes.color.array; let rr = 0, bb = 0; for (let i = 0; i < C.length; i += 3) { rr += C[i]; bb += C[i + 2]; } res.av_ruthSunset = b(rr > bb); res.av_ruthOk = b(res.av_ruthHeadCm < 3 && res.av_ruthHandCm < 3 && ruth.look === 'glow'); res.av_tris = ruth.av.tris(); }
+    /* changing your look while together: the others see it change */
+    A.vs.set.avatarLook('chrome'); for (let i = 0; i < 6; i++) { A.vs.frame([], 0.016); B.vs.frame([], 0.016); await tick(); } await settle(); B.vs.frame([], 0.016); res.av_lookChanges = b(B.vs.together.avatars()[0].look === 'chrome');
+    B.vs.together.stop(); await settle(); for (let i = 0; i < 3; i++) { A.vs.frame([], 0.016); await tick(); } res.av_leaveRemoves = b(A.vs.together.avatars().length === 0);
+    A.vs.together.stop(); await settle(); people.forEach(p => { cleanup(p.vs); scene.remove(p.world); });
+  });
+
   /* ---------- the menu pages, icons and lessons ---------- */
   await section('menu', async () => {
     const vs = fresh(), host = ['inflateIc', 'smoothIc', 'grabIc', 'brushSize', 'strengthBars', 'symOff', 'symMirror', 'symRound', 'undoStroke', 'redoStroke', 'undo', 'floppy', 'eye', 'lock', 'cutIc', 'carveIc'], has = ic => ic in vs.icons || host.includes(ic);

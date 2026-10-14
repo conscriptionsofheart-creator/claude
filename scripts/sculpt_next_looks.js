@@ -88,7 +88,7 @@ export function placeOf(skin, lineT, x, y, z, dragged) {
 /* ---------- looks: the surface for the light ---------- */
 export const LOOKS = {
   matte: { roughness: 0.95, metalness: 0 }, satin: { roughness: 0.6, metalness: 0 }, gloss: { roughness: 0.18, metalness: 0 }, metal: { roughness: 0.3, metalness: 0.9 }, chrome: { roughness: 0.05, metalness: 1 },
-  glow: { roughness: 0.6, metalness: 0, glow: 0.6 }, glass: { roughness: 0.05, metalness: 0, opacity: 0.45, physical: { clearcoat: 1 } }, pearl: { roughness: 0.25, metalness: 0.1, physical: { clearcoat: 1, iridescence: 1 } },
+  glow: { roughness: 0.45, metalness: 0, glow: 0.7 }, glass: { roughness: 0.05, metalness: 0, opacity: 0.45, physical: { clearcoat: 1 } }, pearl: { roughness: 0.25, metalness: 0.1, physical: { clearcoat: 1, iridescence: 1 } },
   velvet: { roughness: 0.85, metalness: 0, physical: { sheen: 1 } }, candy: { roughness: 0.3, metalness: 0, physical: { clearcoat: 1, clearcoatRoughness: 0.05 } }, toon: { toon: true },
 };
 export const LOOK_NAMES = Object.keys(LOOKS);
@@ -104,6 +104,9 @@ export function makeMaterial(THREE, look, old) {
     if (P.sheen != null) { if (typeof m.sheen === 'number') { m.sheen = P.sheen; if (m.sheenColor) m.sheenColor.setRGB(1, 1, 1); } else if ('sheen' in m) m.sheen = new THREE.Color(0.9, 0.9, 0.9); }   /* r128: sheen is a colour; later: a number and a sheenColor */
   } else m = new THREE.MeshStandardMaterial(Object.assign(base, { roughness: L.roughness == null ? 0.6 : L.roughness, metalness: L.metalness || 0 }));
   if (L.opacity != null) { m.transparent = true; m.opacity = L.opacity; m.depthWrite = false; }
-  if (L.glow && m.emissive) { const c = base.color; m.emissive.setRGB(L.glow, L.glow * 0.85, L.glow * 0.7); if (!base.vertexColors) m.emissive.copy(c).multiplyScalar(L.glow); }
+  if (L.glow && m.emissive) {   /* glow in the object's OWN colours: with vertex colours the emissive light is multiplied by them in the shader (a white glow would wash a gradient out) */
+    if (!base.vertexColors) m.emissive.copy(base.color).multiplyScalar(L.glow);
+    else { m.emissive.setRGB(L.glow, L.glow, L.glow); m.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n\ttotalEmissiveRadiance *= vColor.rgb;\n#endif'); }; m.customProgramCacheKey = () => 'glowvc'; }
+  }
   m.userData.look = look; m.name = (o.name || 'look') + ' ' + look; return m;
 }

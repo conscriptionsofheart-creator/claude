@@ -37,3 +37,16 @@ export function makeTestFigure(THREE) {
   j4.rotation.x = 0.4; j3.rotation.z = 0.05; root.updateMatrixWorld(true); skel.update();
   return { root, body, shirt, skeleton: skel, bones };
 }
+/* a stand-in for a MakeHuman export (its "default" skeleton's bone names), for the avatar tests: rigid boxes skinned to root, spine, neck, head and the arm chains, standing in T-pose, facing +z.
+   (MakeHuman's own exports are free to use, CC0; none ship in this package.) */
+export function makeTestMakeHuman(THREE) {
+  const V3 = THREE.Vector3, bones = [], byName = {}, mk = (name, x, y, z, parent) => { const b = new THREE.Bone(); b.name = name; const at = new V3(x, y, z); b.userData.at = at; if (parent) { parent.add(b); b.position.copy(at.clone().sub(parent.userData.at)); } else b.position.copy(at); bones.push(b); byName[name] = b; return b; };
+  const root = mk('root', 0, 0.95, 0), sp = mk('spine01', 0, 1.2, 0, root), nk = mk('neck01', 0, 1.45, 0, sp); mk('head', 0, 1.55, 0, nk);
+  [['L', 1], ['R', -1]].forEach(([s, k]) => { const cl = mk('clavicle.' + s, 0.05 * k, 1.4, 0, sp), ua = mk('upperarm01.' + s, 0.18 * k, 1.4, 0, cl), la = mk('lowerarm01.' + s, 0.46 * k, 1.4, 0, ua); mk('wrist.' + s, 0.72 * k, 1.4, 0, la); mk('upperleg01.' + s, 0.1 * k, 0.9, 0, root); });
+  const pos = [], idx = [], si = [], sw = [], box = (cx, cy, cz, sx, sy, sz, bone) => { const g = new THREE.BoxGeometry(sx, sy, sz), P = g.attributes.position, o = pos.length / 3, bi = bones.indexOf(byName[bone]); for (let i = 0; i < P.count; i++) { pos.push(P.getX(i) + cx, P.getY(i) + cy, P.getZ(i) + cz); si.push(bi, 0, 0, 0); sw.push(1, 0, 0, 0); } g.index.array.forEach(v => idx.push(v + o)); };
+  box(0, 1.2, 0, 0.34, 0.5, 0.2, 'spine01'); box(0, 0.75, 0, 0.3, 0.3, 0.2, 'root'); box(0, 1.5, 0, 0.08, 0.1, 0.08, 'neck01'); box(0, 1.65, 0, 0.18, 0.22, 0.2, 'head');
+  [['L', 1], ['R', -1]].forEach(([s, k]) => { box(0.32 * k, 1.4, 0, 0.28, 0.08, 0.08, 'upperarm01.' + s); box(0.59 * k, 1.4, 0, 0.26, 0.07, 0.07, 'lowerarm01.' + s); box(0.78 * k, 1.4, 0, 0.1, 0.03, 0.08, 'wrist.' + s); box(0.1 * k, 0.4, 0, 0.12, 0.8, 0.12, 'upperleg01.' + s); });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4)); g.setIndex(idx); g.computeVertexNormals();
+  const mesh = new THREE.SkinnedMesh(g, new THREE.MeshStandardMaterial({ color: 0xd9b59a, roughness: 0.6 })); mesh.name = 'mh_body'; const top = new THREE.Group(); top.name = 'MakeHuman test'; top.add(root); top.add(mesh); top.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones)); return { root: top, mesh, bones: byName };
+}

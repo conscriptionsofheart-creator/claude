@@ -37,7 +37,7 @@ export function makeCollab(E) {
   function onMessage(m) {
     if (!C.on || !m || !m.t) return;
     if (m.t === 'welcome') { C.me = m.id; C.state = m.peers && m.peers.length ? 'joining' : 'alone'; C.joinedAt = Date.now(); send({ t: 'hello', name: C.name, cfg: E.liveCfg() }); return; }
-    if (m.t === 'f' && m.from && m.from !== C.me) { try { E.presence(m.from, m.h || [], m.col); } catch (e) { /* drawing only */ } }   /* the collaborator's hands show at once; their work follows in order */
+    if (m.t === 'f' && m.from && m.from !== C.me) { try { E.presence(m.from, m.h || [], m.col, m.hd || null); } catch (e) { /* drawing only */ } }   /* the collaborator's hands show at once; their work follows in order */
     if (m.n == null || m.n <= C.lastN) return; C.lastN = m.n;
     if (C.state === 'joining') {
       if (C.holdAfter == null) { if (m.t === 'hello' && m.from === C.me) { C.holdAfter = m.n; C.waitT = Date.now(); } return; }   /* everything before my hello is in the snapshot I am about to get */
@@ -101,7 +101,9 @@ export function makeCollab(E) {
   }
   function localFrame(hands, dt) {
     if (!C.on || !C.me || C.state === 'connecting') return;
-    const m = { t: 'f', h: (hands || []).map(serHand), dt: q(Math.min(0.1, dt || 0.016)) }, c = cfgDiff(); if (c) m.c = c; send(m);
+    const m = { t: 'f', h: (hands || []).map(serHand), dt: q(Math.min(0.1, dt || 0.016)) }, c = cfgDiff(); if (c) m.c = c;
+    const hd = E.head ? E.head() : null; if (hd && hd.p && hd.q) m.hd = [q(hd.p.x), q(hd.p.y), q(hd.p.z), q(hd.q.x), q(hd.q.y), q(hd.q.z), q(hd.q.w)];   /* where your head is: your avatar stands under it on the others' headsets */
+    send(m);
   }
   function act(fn, args) { if (!C.on || !C.me) return false; const m = { t: 'a', fn, a: args || [] }, c = cfgDiff(); if (c) m.c = c; send(m); return true; }   /* the settings travel with the tap, so it runs with them */
   return {

@@ -24,6 +24,7 @@ import { makeMotion } from './sculpt_next_motion.js';
 import { buildEmblemGen } from './sculpt_next_emblem.js';
 import { GRADIENT_NAMES, gradientOf, alphaAt, colourAt as gradColour, SKIN_NAMES, placeOf, LOOK_NAMES, makeMaterial } from './sculpt_next_looks.js';
 import { makeWheel } from './sculpt_next_wheel.js';
+import { makeAvatar, rigAvatar } from './sculpt_next_avatar.js';
 import { rodGeometry, colourAt } from './sculpt_next_rod.js';
 import { createField, opShape, opIntersectField } from './sculpt_next_sdf.js';
 import { makeCollab, connectWs, matInfo, matFrom, encodeGeometry, decodeGeometry, encodeObject, decodeObject, encodeField, decodeFieldInto, makeHash } from './sculpt_next_collab.js';   /* the synchronous forms, for one-off pinches (stamp) */
@@ -61,6 +62,7 @@ export function createVrSculpt(THREE, core, host) {
     pulseDur: 0.6, pulseRepeat: 1,   /* expressions: how long one pulse takes (s), how many times it plays */
     rgb: '', alpha: 1,    /* the colour picked on the colour wheel (empty: the old palette's, by tint) and how solid it is (0 = clear) */
     gradient: 'from Colour', gradCustom: '',   /* rods, balls and the Gradient tool: a named gradient (sculpt_next_looks.js) or your own, built on the wheel ('#rrggbb[aa]@t,...') */
+    avatarLook: 'pearl', avatarGradient: 'own', avatarUrl: '',   /* sculpting together: how YOU look to the others (a look, a gradient or your own colour, and a MakeHuman or other rigged .glb when the page can load one) */
     skin: 'smooth',       /* how the Gradient tool lays the gradient: along your line, or as marble, wood, scales, speckle, stripes, spots, camo, clouds */
     rodTwist: 180, rodEnd: 'taper',   /* Rod: how far it twists from one end to the other (degrees); its far end tapered to a point or blunt */
   };
@@ -255,7 +257,7 @@ export function createVrSculpt(THREE, core, host) {
     if (!cfg.on) return; dt = dt || 0.016; cursor.hands = {}; tick++; if (!collab.on) motion.tick(dt);   /* expressions play while you sculpt (together, the room's clock turns them) */
     let sh = steady(hands || []); if (sh[0]) { lastTip.copy(sh[0].tip); if (sh[0].dir) lastDir.copy(sh[0].dir); }
     if (wheel.isOpen) sh = wheel.frame(sh);   /* a pinch that starts on the colour wheel works the wheel, not the clay */
-    if (collab.on) { collab.localFrame(sh, dt); clay.tick(Math.min(10, 4 + clay.backlog() * 0.25)); collabCursors(sh); return; }   /* together: this frame's hands go to everyone (you too) in one order, and are worked when they come back */
+    if (collab.on) { collab.localFrame(sh, dt); clay.tick(Math.min(10, 4 + clay.backlog() * 0.25)); collabCursors(sh); updateAvatars(dt); return; }   /* together: this frame's hands go to everyone (you too) in one order, and are worked when they come back */
     fig.frameStart(); if (tick % 45 === 0 && !fig.strokes.size && !route.size) targets();   /* pick up objects pulled into the room while the bench is on */
     clay.tick(4);   /* clay chunks that changed: to the worker (or meshed here within 4 ms) */
     step(sh, dt);
@@ -464,7 +466,7 @@ export function createVrSculpt(THREE, core, host) {
     op: v => { cfg.op = ['add', 'subtract', 'paint', 'intersect'].includes(v) ? v : 'add'; }, falloff: v => { cfg.falloff = ['smooth', 'linear', 'sharp', 'flat'].includes(v) ? v : 'smooth'; },
     stabilize: v => { cfg.stabilize = clampN(+v || 0, 0, 1); }, blend: v => { cfg.blend = clampN(+v || 0, 0, 1); }, clayProfile: v => { cfg.clayProfile = v === 'flat' ? 'flat' : 'round'; }, dot: v => { cfg.dot = ['ball', 'ring', 'cube', 'spike'].includes(v) ? v : 'ball'; },
     prim: v => { cfg.prim = ['sphere', 'cube', 'cylinder', 'cone', 'torus', 'capsule'].includes(v) ? v : 'sphere'; }, detail: v => { cfg.detail = clampN(+v || 5, 2, 20); }, tint: v => { cfg.tint = ((v | 0) % CLAY_COLORS.length + CLAY_COLORS.length) % CLAY_COLORS.length; },
-    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, rodTwist: v => { cfg.rodTwist = clampN(+v || 0, -720, 720); }, rodEnd: v => { cfg.rodEnd = v === 'blunt' ? 'blunt' : 'taper'; }, rgb: v => { cfg.rgb = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : ''; }, alpha: v => { cfg.alpha = clampN(+v, 0, 1); }, gradient: v => { cfg.gradient = GRADIENT_NAMES.includes(v) ? v : 'from Colour'; }, gradCustom: v => { cfg.gradCustom = String(v || '').slice(0, 400); }, skin: v => { cfg.skin = SKIN_NAMES.includes(v) ? v : 'smooth'; }, supportSmooth: v => { cfg.supportSmooth = !!v; }, haptics: v => { cfg.haptics = !!v; },
+    holdWhat: v => { cfg.holdWhat = v === 'layer' ? 'layer' : 'work'; }, rodTwist: v => { cfg.rodTwist = clampN(+v || 0, -720, 720); }, rodEnd: v => { cfg.rodEnd = v === 'blunt' ? 'blunt' : 'taper'; }, rgb: v => { cfg.rgb = /^#[0-9a-f]{6}$/i.test(String(v)) ? String(v).toLowerCase() : ''; }, alpha: v => { cfg.alpha = clampN(+v, 0, 1); }, gradient: v => { cfg.gradient = GRADIENT_NAMES.includes(v) ? v : 'from Colour'; }, gradCustom: v => { cfg.gradCustom = String(v || '').slice(0, 400); }, skin: v => { cfg.skin = SKIN_NAMES.includes(v) ? v : 'smooth'; }, avatarLook: v => { cfg.avatarLook = LOOK_NAMES.includes(v) ? v : 'pearl'; }, avatarGradient: v => { cfg.avatarGradient = v === 'own' || GRADIENT_NAMES.includes(v) ? v : 'own'; }, avatarUrl: v => { cfg.avatarUrl = String(v || '').slice(0, 300); }, supportSmooth: v => { cfg.supportSmooth = !!v; }, haptics: v => { cfg.haptics = !!v; },
     finish: v => { cfg.finish = LOOK_NAMES.includes(v) ? v : 'satin'; }, pulseDur: v => { cfg.pulseDur = clampN(+v || 0.6, 0.2, 4); }, pulseRepeat: v => { cfg.pulseRepeat = clampN(v | 0, 1, 10); }, clayOnFigure: v => { cfg.clayOnFigure = v === 'clay' ? 'clay' : 'skin'; }, budget: v => { cfg.budget = Math.max(0, v | 0); },
   };
   const after = {
@@ -600,11 +602,38 @@ export function createVrSculpt(THREE, core, host) {
   function nameTag(text, col) {
     if (typeof document === 'undefined') return null; const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64; const g = cv.getContext('2d'); if (!g) return null;
     g.fillStyle = 'rgba(28,24,36,0.72)'; g.beginPath(); if (g.roundRect) g.roundRect(4, 8, 248, 48, 22); else g.rect(4, 8, 248, 48); g.fill(); g.fillStyle = '#' + col.toString(16).padStart(6, '0'); g.font = '600 30px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 33);
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false })); sp.name = 'vrPeerName'; sp.scale.set(0.12, 0.03, 1); sp.position.set(0, 0.05, 0); sp.renderOrder = 48; return sp;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false })); sp.name = 'vrPeerName'; sp.scale.set(0.2, 0.05, 1); sp.position.set(0, 0.05, 0); sp.renderOrder = 48; return sp;
   }
-  function presence(id, hands) {
-    let list = peerHands.get(id); const rm = o => { try { if (o.parent) o.parent.remove(o); } catch (e) { /* gone */ } };
-    if (!hands) { if (list) list.forEach(rm); peerHands.delete(id); return; }
+  /* the collaborators as people: an avatar per person (sculpt_next_avatar.js) standing under their head, arms reaching to their hands, in the look and gradient THEY chose; their name over it.
+     Without a head pose (a page that sends none) they show as a soft ball at each fingertip, as before. Drawn on this headset only (it changes nothing in the shared work). */
+  const peerPose = new Map(), avatars = new Map();
+  const ownStops = id => { const c = new THREE.Color(PEER_COLORS[slotOf(id)]), hx = k => '#' + [c.r, c.g, c.b].map(v => Math.round(Math.max(0, Math.min(1, v * k)) * 255).toString(16).padStart(2, '0')).join(''); return [[0, hx(0.3)], [0.5, hx(1)], [1, hx(1.6)]]; };
+  function avatarStyle(id) { const x = ctxs.get(id), c = x ? x.cfg : {}; const g = c.avatarGradient || 'own', stops = g === 'own' ? ownStops(id) : gradientOf(Object.assign({}, c, { gradient: g }), CLAY_COLORS).front; return { look: c.avatarLook || 'pearl', stops, url: c.avatarUrl || '', sig: [c.avatarLook, g, g === 'custom' ? c.gradCustom : '', c.avatarUrl].join('|') }; }
+  function presence(id, hands, col, hd) {
+    const rm = o => { try { if (o.parent) o.parent.remove(o); } catch (e) { /* gone */ } };
+    if (!hands) { const list = peerHands.get(id); if (list) list.forEach(rm); peerHands.delete(id); const a = avatars.get(id); if (a) rm(a.av.root); avatars.delete(id); peerPose.delete(id); return; }
+    const pose = { head: hd ? { p: new V3(hd[0], hd[1], hd[2]), q: new Q(hd[3], hd[4], hd[5], hd[6]) } : null, hands: hands.map(h => ({ p: new V3(h.p[0], h.p[1], h.p[2]), q: h.q ? new Q(h.q[0], h.q[1], h.q[2], h.q[3]) : null, pinch: !!h.pi })), floor: host.floor ? host.floor() : 0 };
+    peerPose.set(id, pose);
+    if (pose.head) { const list = peerHands.get(id); if (list) list.forEach(o => { o.visible = false; }); return; }   /* the avatar shows them; the balls are for pages without a head pose */
+    presenceBalls(id, hands);
+  }
+  function makePeerAvatar(id) {
+    const st = avatarStyle(id), x = ctxs.get(id), av = makeAvatar(THREE, { name: x ? x.name : id, look: st.look, stops: st.stops }), tag = nameTag(x ? x.name : PEER_NAMES[slotOf(id)], PEER_COLORS[slotOf(id)]);
+    if (tag) { tag.position.set(0, 0.17, 0); av.parts.head.add(tag); } try { host.addObject ? host.addObject(av.root) : null; } catch (e) { /* host */ }
+    const ent = { av, sig: st.sig, url: '' }; avatars.set(id, ent); return ent;
+  }
+  function updateAvatars(dt) {
+    peerPose.forEach((pose, id) => {
+      if (!pose.head) return; let a = avatars.get(id) || makePeerAvatar(id); const st = avatarStyle(id);
+      if (st.url && st.url !== a.url && host.loadAvatar && !a.loading) {   /* their own figure (a MakeHuman export...), loaded once; the built-in one stands in meanwhile */
+        a.loading = true; const want = st.url; Promise.resolve(host.loadAvatar(want)).then(fig => { if (!fig || !avatars.has(id)) return; const r = rigAvatar(THREE, fig, { name: id }); r.setLook(st.look, st.stops); const old = avatars.get(id); try { if (old.av.root.parent) old.av.root.parent.remove(old.av.root); } catch (e) { /* gone */ } try { host.addObject ? host.addObject(r.root) : null; } catch (e) { /* host */ } const x = ctxs.get(id), tag = nameTag(x ? x.name : id, PEER_COLORS[slotOf(id)]); if (tag && r.bones.head) { tag.position.set(0, 0.25, 0); r.bones.head.add(tag); } avatars.set(id, { av: r, sig: st.sig, url: want }); }).catch(() => { a.loading = false; a.url = want; });
+      }
+      if (st.sig !== a.sig) { a.av.setLook(st.look, st.stops); a.sig = st.sig; }
+      a.av.update(pose, dt);
+    });
+  }
+  function presenceBalls(id, hands) {
+    let list = peerHands.get(id);
     if (!list) { list = []; peerHands.set(id, list); }
     const col = PEER_COLORS[slotOf(id)];
     hands.forEach((h, i) => { let o = list[i]; if (!o) { o = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 12), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.75, depthTest: false })); o.name = 'vrPeerHand'; o.renderOrder = 47; o.userData.noMerge = true; if (i === 0) { const x = ctxs.get(id), t = nameTag(x ? x.name : PEER_NAMES[slotOf(id)], col); if (t) o.add(t); } list[i] = o; try { host.addObject ? host.addObject(o) : null; } catch (e) { /* host */ } }
@@ -614,10 +643,10 @@ export function createVrSculpt(THREE, core, host) {
   function collabCursors(sh) { sh.forEach(h => { const rt = route.get(collab.me + ':' + h.id), hit = !!rt || !!clay.hit(h.tip, cfg.size / 100 * 1.3, true); cursor.hands[h.id] = { tip: h.tip, hit, radius: cfg.size / 100, mode: cfg.mode, op: cfg.op, pulse: cfg.haptics ? (myPulse[h.id] || 0) : 0 }; myPulse[h.id] = 0; }); }
   const collab = makeCollab({
     newCtx, frame: collabFrame, action: (x, fn, a, c) => collabAction(x, fn, a, c), endAllPeers, endPeer: x => withPeer(x, () => { endAll(); shapes.drop(); }),
-    clearUndo: () => { undoS.length = 0; redoBy.clear(); touchedSince.clear(); }, snapshot, restore, snapshotGen, restoreGen, warmGen, ctxFromSnap, checksum, presence, say: t => say(t), liveCfg: () => cfgPlain(cfg),
+    clearUndo: () => { undoS.length = 0; redoBy.clear(); touchedSince.clear(); }, snapshot, restore, snapshotGen, restoreGen, warmGen, ctxFromSnap, checksum, presence, head: () => { try { return host.head ? host.head() : null; } catch (e) { return null; } }, say: t => say(t), liveCfg: () => cfgPlain(cfg),
     enqueueGen: (gen, label) => clay.enqueue((function* () { try { return yield* gen; } catch (e) { console.warn('sculpt together', e); } })(), () => {}, label),
     enqueue: (fn, label) => clay.enqueue((function* () { try { fn(); } catch (e) { console.warn('sculpt together', e); } })(), () => {}, label),
-    stopped: () => { ctxs.forEach(x => { if (!x.mine && x.shapes) { x.shapes.drop(); x.hold.end(); } }); ctxs.clear(); peerHands.forEach((_, id) => presence(id, null)); },
+    stopped: () => { ctxs.forEach(x => { if (!x.mine && x.shapes) { x.shapes.drop(); x.hold.end(); } }); ctxs.clear(); [...new Set([...peerHands.keys(), ...avatars.keys()])].forEach(id => presence(id, null)); },
   });
   const pub = (fn, now, ret) => (...a) => { if (collab.on && !curCtx) { collab.act(fn, a.map(refArg)); return typeof ret === 'function' ? ret(...a) : ret === undefined ? true : ret; } return now(...a); };
   function emblemAt(opts) { if (opts && opts.at) return opts.at.clone ? opts.at.clone() : new V3(...opts.at); let at = lastTip.clone(); if (figure) { const b = new THREE.Box3().setFromObject(figure); if (!b.isEmpty()) { const c = b.getCenter(new V3()); at = new V3(c.x + (b.max.x - b.min.x) / 2 + 0.45, c.y + 0.25, c.z); } } return at; }
@@ -635,7 +664,7 @@ export function createVrSculpt(THREE, core, host) {
     /* start({ url, transport, name }): join the room (the first one in starts it). Alone until someone else joins. */
     start(o) { o = o || {}; endAll(); let t = o.transport; if (!t) { try { t = connectWs(o.url || relayUrl()); } catch (e) { say('Could not reach the sculpt relay: ' + (e && e.message || e)); return false; } } let nm = o.name; try { nm = nm || (host.userName && host.userName()) || localStorage.getItem('sculptName') || ''; } catch (e) { /* storage */ } collab.start(t, { name: nm }); say('Looking for the others…'); return true; },
     stop() { return collab.stop(); }, get on() { return collab.on; }, get state() { return collab.state; }, get me() { return collab.me; }, people: () => collab.people(), checksum, url: relayUrl,
-    get waiting() { return clay.backlog(); }, stats: () => Object.assign({ slowMs: +clay.S.slowMs.toFixed(1), slowWhat: clay.S.slowWhat }, snapStats), resetSlow: () => { clay.S.slowMs = 0; }, rounds: () => ({ sums: [...collab.C.sums.entries()], resyncs: collab.C.resyncs || 0 }),
+    get waiting() { return clay.backlog(); }, avatars: () => [...avatars.entries()].map(([id, a]) => ({ id, kind: a.av.kind, look: (a.av.root.getObjectByProperty('isMesh', true) || {}).material && a.av.root.getObjectByProperty('isMesh', true).material.userData.look, av: a.av })), stats: () => Object.assign({ slowMs: +clay.S.slowMs.toFixed(1), slowWhat: clay.S.slowWhat }, snapStats), resetSlow: () => { clay.S.slowMs = 0; }, rounds: () => ({ sums: [...collab.C.sums.entries()], resyncs: collab.C.resyncs || 0 }),
   };
 
   const vs = {
@@ -648,7 +677,7 @@ export function createVrSculpt(THREE, core, host) {
     engine: ENGINE, version: ENGINE_VERSION, clay: clayUi, shapes: shapesUi, hold, exportGlb, together, flush: () => clay.flush(), stats: () => Object.assign(clay.stats(), { undo: undoS.length, redo: (redoBy.get(who) || []).length, targets: targetsCache.length }),
     makeClay: mesh => { if (collab.on && !curCtx) { const r = refOf(mesh); if (!r) { say('That object is not shared with your collaborator, so it cannot become clay here.'); return null; } collab.act('makeClay', [r]); return true; } return clay.fromMesh(mesh); },   /* a layer, or a Promise of one when the worker voxelizes */ decimate: (g, n) => exporter.decimate(g, n),
     motion, pulse: pub('pulse', pulseNow), recordMotion: pub('record', recordNow), stopMotion: pub('stopMotion', stopMotionNow), playMotion: pub('play', playNow),
-    idle: dt => { if (cfg.on) return; if (collab.on) { clay.tick(4); collab.localFrame([], dt); } else motion.tick(dt || 0.016); },   /* the page calls this every frame while Sculpt is closed, so a work keeps spinning (and, together, the shared work keeps up) */
+    idle: dt => { if (cfg.on) return; if (collab.on) { clay.tick(4); collab.localFrame([], dt); updateAvatars(dt || 0.016); } else motion.tick(dt || 0.016); },   /* the page calls this every frame while Sculpt is closed, so a work keeps spinning (and, together, the shared work keeps up) */
     assets: () => assets.filter(a => a.object.parent), makeEmblem: o => { if (collab.on && !curCtx) { o = o || {}; collab.act('emblem', [{ height: o.height, spin: o.spin, turn: o.turn, at: emblemAt(o).toArray() }]); return true; } return makeEmblem(o); },
     spin: (obj, T) => { obj = obj || (clay.active && clay.active.work.group); if (!obj) return false; if (collab.on && !curCtx) { const r = refOf(obj); if (!r) return false; collab.act('spin', [r, T || 0]); return true; } return spinNow(obj, T); },
     joinPieces: pub('join', joinPieces), openWheel, closeWheel: () => wheel.close(), wheel, gradients: GRADIENT_NAMES, skins: SKIN_NAMES, looks: LOOK_NAMES, paintStops: () => paintStops(cfg), playMotionLocal: playNow, newAsset: pub('newAsset', newAsset), endAsset: pub('endAsset', endAsset), get assetBench() { return !!asset; },
