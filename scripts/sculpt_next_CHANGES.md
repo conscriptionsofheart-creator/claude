@@ -1,12 +1,16 @@
 # Sculpt engine "next": what changed (2026-10-13 / 14)
 
-The new engine behind the same contract as `bst_vr_sculpt.js` (see `sculpt_next_README.md`). Plug-in: copy every `scripts/sculpt_next_*.js` file into the app's `lib/` folder (flat, no sub-folders; this replaces the slot file `sculpt_next_engine.js`), and replace `lib/vr_core.js` with the one here if you want the new wrist-menu pages (it has a small, guarded hook; without it the engine still works behind the existing tiles). In the headset: **Sculpt > More tools > "Engine: next"**, leave Sculpt, enter it again. If the next engine fails to load, the page falls back to the current engine by itself (unchanged behaviour of `vr_core.js`).
+The new engine behind the same contract as `bst_vr_sculpt.js` (see `sculpt_next_README.md`). Plug-in: copy every `scripts/sculpt_next_*.js` file into the app's `lib/` folder (flat, no sub-folders; this replaces the slot file `sculpt_next_engine.js`), and replace `lib/vr_core.js` with the one here if you want the new wrist-menu pages, your head position for your avatar and avatar loading (small, guarded hooks; without them the engine still works behind the existing tiles). In the headset: **Sculpt > More tools > "Engine: next"**, leave Sculpt, enter it again. If the next engine fails to load, the page falls back to the current engine by itself (unchanged behaviour of `vr_core.js`).
 
 ## The choice: what the clay is made of
 
-**Hybrid.** New clay is a **narrow-band signed distance field** (the way Substance 3D Modeler keeps clay): 8×8×8-sample bricks, only round the surface (a fist-sized lump is a few hundred kB), 5 mm samples by default (Detail: 3 / 5 / 10 mm). It is turned into triangles with **Surface Nets** in 16-cell chunks, in a **Web Worker** (main-thread fallback with a 4 ms budget). Every clay operation (each dab, shape, saw pass, merge, remesh, emblem build) is **sliced**: it pauses between bricks or rows, and a per-frame budget (about 4 ms) runs what fits; the rest continues next frame, so no single frame carries a big job.
+**Hybrid.** New clay is a **narrow-band signed distance field** (the way Substance 3D Modeler keeps clay): 8×8×8-sample bricks, only round the surface (a fist-sized lump is a few hundred kB), 5 mm samples by default (Detail: 3 / 5 / 10 mm). It is turned into triangles with **Surface Nets** in 16-cell chunks, in a **Web Worker** (main-thread fallback with a 4 ms budget). Every heavy operation (each dab, shape, saw pass, merge, remesh, the emblem, a long rod, a gradient over 67k points, a newcomer's snapshot) is **sliced**: it pauses between bricks, rows or pieces, and a per-frame budget (about 4 ms) runs what fits; the rest continues next frame, so no single frame carries a big job.
 
 **Figures, clothes, props stay triangle meshes.** On them the brushes move points inside **shape keys** (never the rest shape the bones are bound to), so skeleton, skin weights and keys survive; tested below. The **current engine runs inside the next one** for the mesh tools that already work (saw and whole-plane cut, Carve, Erase, Heal edge, Close hole, Wrinkle, Stamp, Squeeze: `bst_cut.js` does the geometry exactly as before); the saw is the same saw. On clay those tools have clay versions. One undo stack covers both.
+
+**Rods, balls and the emblem are smooth meshes** (Ruth 2026-10-14: "take a rectangular rod (not flattened), twist it, and then bend it, and then stretch the end of it and taper it off"): a rectangular section, twisted, laid along the drawn path with frames that turn as little as possible, the end drawn out and tapered; colours as vertex colours, so every brush, the Gradient tool and the Look tool work on them and they save as they look.
+
+**Sculpting together sends hands, not clay.** Each headset sends what its hands did this frame and every menu tap (30 to 100 bytes a frame) to a small relay that numbers every message and echoes it to everyone, the sender too; every headset works the messages in that one order, each as a job in the clay queue, so all of them build the same work. A newcomer gets a snapshot at an exact point in that order; a checksum every few seconds catches any headset that drifted and re-sends it the work.
 
 Why not dynamic-topology triangles for everything: a figure's triangles carry bones, weights, uvs and keys; re-topologising them under the brush would break exactly what must survive. Why not voxels for figures: same reason. The two halves meet through **Make clay** (a closed object becomes clay), **Stamp** (clay can be pressed into a figure or object as a cutter) and **Save** (clay is baked to plain meshes).
 
@@ -23,26 +27,52 @@ Engine time per XR frame (ms), avg / worst, three r128 (the Atelier), meshing on
 | Saw sweep through clay | 4.1 / 6.6 | 7.5 / 13.3 | 9.6 / 16.2 |
 | Remesh a layer at 3 mm (spread over ~120 frames) | 3.2 / 5.1 | 3.7 / 6.9 | 4.0 / 12.9 |
 | Brushes on a figure (keys, mirror) | 0.1 / 4 | 0.4 / 11 | 0.6 / 16.3 |
-| Building the emblem (≈460 frames at 1×) | 4.3 / 10.4 | 4.6 / 24 | 5.0 / 35 |
 | Busy Build-mode room, 60 hover frames (whole run) | 59 | 327 | 396 |
 
-The same busy-room run on the **current** engine: 560 ms at 1× (about 9× more). Worst frames stay under 50 ms (the 20 fps floor) at 6×; the 72 fps aim (13.9 ms) holds on average at 4×, not on every frame. Work per dab (sum of its slices, 1×): clay 2 cm ≈ 0.7 ms per copy, 8 cm ≈ 8 ms, smooth 4 cm ≈ 1 ms, flatten ≈ 1.7 ms, pinch ≈ 3.3 ms, grab ≈ 1.4 ms. Meshing ≈ 0.3 ms per chunk (1.8 ms at 6×). Other one-offs: Make clay of a 10 cm box 52–68 ms (in the worker when there is one), decimating a 100k-triangle copy to 20k 0.6 s (in the worker when there is one), glb export of a clay work 0.1 s. Triangles: a 12 cm ball at 5 mm ≈ 9k; the emblem 75k at 2.5 mm.
+The same busy-room run on the **current** engine: 560 ms at 1× (about 9× more). Worst frames stay under 50 ms (the 20 fps floor) at 6×; the 72 fps aim (13.9 ms) holds on average at 4×, not on every frame. Work per dab (sum of its slices, 1×): clay 2 cm ≈ 0.7 ms per copy, 8 cm ≈ 8 ms, smooth 4 cm ≈ 1 ms, flatten ≈ 1.7 ms, pinch ≈ 3.3 ms, grab ≈ 1.4 ms. Meshing ≈ 0.3 ms per chunk (1.8 ms at 6×). Other one-offs: Make clay of a 10 cm box 52–68 ms (in the worker when there is one), decimating a 100k-triangle copy to 20k 0.6 s (in the worker when there is one), glb export of a clay work 0.1 s.
 
-## What each tool does now (Substance 3D Modeler's set)
+**Rods and the emblem.** A drawn rod (12k triangles) builds as you draw (0.2 ms a frame on average). The emblem (67,584 triangles: two rods and two heads) is built in 29 slices over a few frames: 37–84 ms in all at 1×, the largest slice about 5 ms once the code has run once (20 ms the very first time). The rod builder was rewritten for this: 25 ms → 11 ms per emblem body.
 
-- **Brushes, on clay and on figures/objects:** Clay (round tube or flat ribbon; trigger pressure sets thickness), Smooth, Flatten, Pinch (crease in subtract, ridge in add), Inflate, Grab, Scrape, Smear, Dots (stamp along the stroke: balls, rings, cubes, spikes), plus the current Indent and Melt. **Mode on every brush and shape:** add / subtract / paint / intersect. Edge (falloff): smooth / linear / sharp / flat. Size, strength, colour (8), finish per layer (matte / satin / gloss / metal / glow).
+**Sculpting together** (2 and 4 engines in one page over the in-page relay, and two separate browser tabs over the real relay, Node and Python):
+
+| What | measured |
+|---|---|
+| Frame time with two people sculpting the same clay at once (1×, per engine) | 5.8 avg / 9–12 worst |
+| Four people drawing clay at once (1×) | 7.8 avg / 13–17 worst |
+| Two tabs over the real relay, whole session (1×) | 0.3 avg, 0.8 at the 99th percentile, 24–32 worst |
+| Same at 4× | 1.0 avg, 3.4 at the 99th percentile; the first use of a tool in a page (code not yet compiled) 60–120 ms once; the same figure stroke the second time: 12 ms worst |
+| What a headset sends per frame | 30–100 bytes (2–7 kB/s at 72 fps) |
+| Joining late (snapshot of clay + a rod, 657 kB) | 102–216 ms from tap to sculpting at 1×, 284–684 ms at 4×; built in 5–25 ms of slices, taken in 6–9 ms |
+| Checksum rounds (every 480 messages) over a 2-minute two-tab session | 51 of 51 equal, 0 repairs needed (a hand-wiped brick in another test was repaired by itself) |
+| Figure preparation (posed copy, neighbours) | 9.5 → 1.9 ms on the test figure (number keys instead of text keys); a real figure prepares once per session |
+| Avatars (built-in figure, 5,716 triangles each) | both people sculpting with avatars: 5.3 avg / 19–26 worst (the worst is the first frame an avatar appears) |
+
+## What each tool does now (Substance 3D Modeler's set, and more)
+
+- **Brushes, on clay and on figures/objects:** Clay (round tube or flat ribbon; trigger pressure sets thickness), Smooth, Flatten, Pinch (crease in subtract, ridge in add), Inflate, Grab, Scrape, Smear, Dots (stamp along the stroke: balls, rings, cubes, spikes), plus the current Indent and Melt. **Mode on every brush and shape:** add / subtract / paint / intersect. Edge (falloff): smooth / linear / sharp / flat. Size, strength.
 - **Symmetry on every tool:** off / mirror / 360 / mirror + 360. On clay: the work's middle plane and upright; on a figure: left and right keys, 360 round the nearest bone (as before).
 - **Shapes with a hand gizmo:** sphere, cube, cylinder, cone, torus, capsule. Pinch inside to move and turn, pinch a knob to stretch a side, both hands to resize and turn; Apply in add (clay), subtract (carves clay, or cuts a figure or object with `bst_cut.js`), intersect, paint. Blend hard / soft.
+- **Rod, Ball, Join pieces:** Rod draws a solid rectangular rod along your line, twisted (0–540°), its end drawn out and tapered (or blunt); Ball: pinch where its middle goes and pull out to its size; both come out in the current gradient. Join pieces makes every rod, ball and emblem one object for Hold, Spin and Save. Together, the emblem can be made by hand by two people at once (tested).
+- **Colour (Ruth 2026-10-14: "a color wheel, with the ability to build gradients from it, and transparencies"):** the **Colour wheel** floats beside your hand: pinch and slide on it for the colour (round it) and its strength (outwards), a light bar, a see-through bar, and the gradient strip: + adds the colour, tap a marker to change that colour, slide it to move it, − takes it out. **Gradients:** your own from the wheel, or 20 ready ones (your emblem's blue and orange, sunset, ocean, aurora, forest, fire, lava, rose gold, candy, peacock, midnight, neon, mint, earth, skin tones, gold, silver, rainbow, from your colour). See-through stops make rods, balls and painted objects fade to clear.
+- **Gradient tool and skins:** drag across an object or clay and the gradient lies along your line; a tap lays it bottom to top. **Skin** turns it into a pattern made of the gradient's colours: marble, wood, scales, speckle, stripes, spots, camo, clouds (3D noise in the object's own space: no seams, kept as vertex colours, so they save in the .glb).
+- **Look tool (shaders):** matte, satin, gloss, metal, chrome, glow (glows in the object's own colours), glass, pearl, velvet, candy, toon, on any object or clay layer, with the wheel's see-through. People keep their own skin design (the tools say so and leave a figure alone; Paint still colours a figure).
 - **Cutter:** the saw (unchanged code on meshes; a swept slab on clay) and the whole-plane cut; Carve, Erase, Stamp on clay too; clay works as a Stamp into figures and objects.
-- **Layers and groups:** new, pick, hide, lock, duplicate, merge down (add / cut out / keep shared), group with below, ungroup, merge group, delete, remesh (3 / 5 / 10 mm), one undo per change.
-- **Undo / redo:** one stack for clay, layers, shapes, Hold, keys and the current engine's mesh tools (tested in mixed order).
+- **Layers and groups:** new, pick, hide, lock, duplicate, merge down (add / cut out / keep shared), group with below, ungroup, merge group, delete, remesh (3 / 5 / 10 mm), a look per layer, one undo per change.
+- **Undo / redo:** one stack for clay, layers, shapes, Hold, keys, rods, balls, gradients, looks and the current engine's mesh tools. Together, Undo takes back **your own** last step, and refuses (and says why) when someone has since changed the same thing.
 - **Stroke stabiliser (Steady):** the brush trails the fingertip on a string (0 / 1 cm / 2.4 cm).
-- **Hold (two-hand grab):** one hand moves and turns the work, two hands resize and turn it (upright turns only, so it never tips by accident). Figures are moved with Pose > Move as before.
-- **Remesh / decimate / export:** Remesh resamples a layer; Make clay voxelizes an object; Save clay / Save figure write a .glb to the library (three r128 and r186); a triangle Budget thins only the saved COPY of objects, never the work in the room and never people.
-- **Flow (Ruth 2026-10-13):** while one hand sculpts, a pinch with the other hand smooths; a tracked hand turned palm up swaps to the partner (add <-> subtract); a soft haptic tick per dab on controllers.
-- **Emotion in motion:** every sculpted key plays as an **expression** (a smooth pulse, 0.3 s micro-expression to 1.5 s, never shorter than 0.2 s, never more than one rise a second); **Record face** turns played expressions into an animation clip that Save figure keeps in the .glb.
-- **Story assets apart from bodies:** **New asset** sets the figure aside and starts a separate clay work; Save clay keeps it as its own library object.
-- **Your emblem:** **Make the emblem** builds the two-figure emblem in clay beside you: each body one rectangular rod painted in a gradient and twisted (front face: the main gradient; back face: the fold colours, showing where it turns), heads as spheres, four layers you can keep sculpting; **Spin** turns any work slowly (10 s a turn, eases in and out) and the spin is saved in the .glb as an animation. Preview without a headset: `tools/sculpt_next_emblem_preview.html` (needs three r128 from cdnjs).
+- **Hold (two-hand grab):** takes what your hand is on (clay, rod, ball, emblem, a room object); one hand moves and turns it, two hands resize and turn it (upright turns only). Figures are moved with Pose > Move as before.
+- **Remesh / decimate / export:** Remesh resamples a layer; Make clay voxelizes an object; Save clay / Save figure write a .glb to the library (three r128 and r186) with looks and vertex colours; a triangle Budget thins only the saved COPY of objects, never the work in the room and never people.
+- **Flow:** while one hand sculpts, a pinch with the other hand smooths; a tracked hand turned palm up swaps to the partner (add <-> subtract); a soft haptic tick per dab on controllers.
+- **Emotion in motion:** every sculpted key plays as an **expression** (a smooth pulse, 0.3 s micro-expression to 1.5 s, never shorter than 0.2 s, never more than one rise a second); **Record face** turns played expressions into an animation clip that Save figure keeps in the .glb. **Spin** turns any work slowly (eases in and out) and saves as an animation.
+- **Story assets apart from bodies:** **New asset** sets the figure aside and starts a separate work; Save clay keeps it as its own library object.
+- **Your emblem:** **Make the emblem** brings the two-figure emblem (two rods twisted, bent, stretched and tapered, two heads, in its own gradients) beside you, turning slowly.
+- **Sculpt together (2 tested; built and tested for 4):** one tap joins the room. Everyone's hands and taps go through the relay in one order, so every headset builds the same work; each person has their own tools, settings, picked layer, shape and undo. You see the others as **people**: an avatar under their head, arms reaching to their real hands, legs on the floor, in the **look and gradient they chose** (My avatar, My avatar colours), with their name; a MakeHuman export (or a Mixamo / Blender-named rig) is used as their avatar when the page can load it (bones found by name, only head and arms moved). Joining late: everyone's strokes end, the first person sends the work, undo starts fresh. A drifted headset is matched again by itself.
+
+### How to sculpt together
+
+1. On a computer on the same network as the headsets, start a relay: `node tools/sculpt_next_relay.mjs` or `python3 tools/sculpt_next_relay.py` (nothing to install; port 8787; any number of rooms).
+2. Each headset finds it at `ws://<the page's host>:8787/?room=atelier` by default; set another address with `localStorage.sculptTogetherUrl` or the page's `host.collabUrl()`. A page served over **https** needs **wss://** (put the relay behind the same TLS proxy as the page).
+3. In the headset: Clay & shapes ▸ **Sculpt together**. With clay of your own in the room the first tap only warns (joining someone shows their work instead); tap again. **My avatar** and **My avatar colours** set how you look to the others.
 
 ## Substance's controls: what was checked
 
@@ -54,20 +84,25 @@ New (all in `scripts/`, flat, go to `lib/`):
 
 | File | What |
 |---|---|
-| `sculpt_next_engine.js` | `createVrSculpt(THREE, core, host)` and `makeSculpt(THREE)`: the contract, routing clay vs mesh, one undo stack, stabiliser, clay versions of saw / cut / carve / erase / stamp, the current engine inside |
+| `sculpt_next_engine.js` | `createVrSculpt(THREE, core, host)` and `makeSculpt(THREE)`: the contract, routing clay vs mesh, one undo stack, stabiliser, clay versions of saw / cut / carve / erase / stamp, the current engine inside, Rod, Ball, Join, Gradient and Look tools, the per-person context for sculpting together, avatars |
 | `sculpt_next_sdf.js` | the clay field (bricks), sliced operations, shapes, voxelize |
 | `sculpt_next_mesher.js` | Surface Nets chunk mesher (page and worker) |
 | `sculpt_next_worker.js` | the worker: mesh, voxelize, decimate jobs |
-| `sculpt_next_clay.js` | works, layers, groups, merge, remesh, Make clay, strokes with symmetry, the job queue, finish |
+| `sculpt_next_clay.js` | works, layers, groups, merge, remesh, Make clay, strokes with symmetry, the job queue (ordered, sliced), layer looks, painting a layer, snapshots |
 | `sculpt_next_surface.js` | brushes on triangle meshes (superset of `bst_sculpt_core.js`) |
 | `sculpt_next_figure.js` | hand strokes on figures into keys, paint, keys page, wardrobe save hand-off |
 | `sculpt_next_shapes.js` | shapes with the hand gizmo; Hold |
 | `sculpt_next_export.js` | bake, budget, glb export, library save |
 | `sculpt_next_decimate.js` | quadric-error decimation (pure, runs in the worker) |
 | `sculpt_next_motion.js` | expressions (pulse), recorded key animation, Spin |
-| `sculpt_next_emblem.js` | Ruth's emblem as clay (pure; same code in the preview page) |
-| `sculpt_next_ui.js` | wrist-menu pages, 53 new picture-tile icons, lessons, tile list |
-| `sculpt_next_testkit.js` | a built skinned figure for the self-test when `female.glb` is absent |
+| `sculpt_next_rod.js` | the rod: rectangular section, twist, bend, stretch, taper, front / back gradients, see-through, sliced |
+| `sculpt_next_emblem.js` | Ruth's emblem from rods and spheres (pure; also used by the preview page) |
+| `sculpt_next_wheel.js` | the colour wheel (vertex colours only, no canvas) |
+| `sculpt_next_looks.js` | gradients (library and your own), skins (patterns), looks (materials) |
+| `sculpt_next_collab.js` | sculpting together: the shared order, joining, checksums, WebSocket and in-page transports, snapshot encoders |
+| `sculpt_next_avatar.js` | the people you sculpt with: built-in figure and rigged figures (MakeHuman, Mixamo, Blender names) posed to head and hands |
+| `sculpt_next_ui.js` | wrist-menu pages, picture-tile icons, lessons, tile list |
+| `sculpt_next_testkit.js` | a built skinned figure, and a stand-in with MakeHuman's bone names, for the self-test |
 | `sculpt_next_selftest.js` | the next engine's own checks (run by the self-test page) |
 | `sculpt_next_CHANGES.md` | this file |
 
@@ -77,23 +112,28 @@ Changed:
 |---|---|
 | `sculpt_next_engine.js` | was the slot re-exporting the current engine; now the next engine |
 | `bst_vr_sculpt_selftest.html` | `?engine=current\|next`; falls back to the built figure; runs the next engine's checks; `?only=` sections |
-| `vr_core.js` | +15 lines, all guarded: the engine's icons merged into ICONS (existing names untouched), its pages 10–13 (CLAY, SHAPES, LAYERS, EXPRESSIONS) and the "Clay & shapes ▸" entry tile, a palm-up flag on tracked hands, a soft haptic tick, an idle call so a spin keeps turning after Sculpt closes. The current engine has none of `icons / menu / idle`, so with it nothing changes. |
+| `vr_core.js` | +16 lines, all guarded: the engine's icons merged into ICONS (existing names untouched), its pages 10–13 (CLAY, SHAPES, LAYERS, EXPRESSIONS) and the "Clay & shapes ▸" entry tile, a palm-up flag on tracked hands, a soft haptic tick, an idle call so a spin (and a shared session) keeps going after Sculpt closes, and two host functions: `head()` (the XR camera's pose, for your avatar on the others' headsets) and `loadAvatar(url)` (a .glb through the page's GLTFLoader). The current engine uses none of these, so with it nothing changes. |
 | `sculpt_next_README.md` | the contract's new optional parts |
 
 Untouched and reused as they are: `bst_vr_sculpt.js`, `bst_sculpt_core.js`, `bst_cut.js`, `bst_shapekeys.js`, `bst_squeeze.js`, `bst_wrinkle.js`, `wardrobe_core.js` (its cut saving sees each brushed piece of clothing as changed, because the piece gets a buffer-sharing new geometry object after the stroke).
 
-Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/` as `/pe_lib/` with three r128 and r186.1 from npm and a pretend library), `sculpt_next_run.mjs` (headless runner with CPU throttling), `sculpt_next_emblem_shot.html`, `sculpt_next_emblem_page.mjs` (builds the emblem preview page from the engine files), `sculpt_next_debug.html`.
+Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/` as `/pe_lib/` with three r128 and r186.1 from npm and a pretend library), `sculpt_next_run.mjs` (headless runner with CPU throttling), **`sculpt_next_relay.mjs` and `sculpt_next_relay.py` (the room relay: these two ARE meant to run, on a computer on the headsets' network)**, `sculpt_next_together.html` + `sculpt_next_together_run.mjs` (two browser tabs sculpting together over the real relay: `node tools/sculpt_next_together_run.mjs [--py] [--cpu 4] [--three 128]`), `sculpt_next_looks_shot.html`, `sculpt_next_avatars_shot.html`, `sculpt_next_emblem_shot.html`, `sculpt_next_rod_shot.html` (pictures: `sculpt_next_looks_shot.png`, `sculpt_next_avatars_shot.png`), `sculpt_next_emblem_page.mjs`, `sculpt_next_debug.html`.
 
 ## Tests (no headset)
 
-`bst_vr_sculpt_selftest.html?three=128|186&engine=next` (append `&only=clay,brushes,shapes,cutter,layers,hold,figure,export,worker,timing,flow,emblem,menu` for parts). Every existing check of the current engine passes on the next engine (r128 and r186), then about 140 more: clay watertight with exact undo / redo, mirror / 360 / both, each brush's effect with exact undo (12/12), shapes and gizmo, booleans, saw (one undo per sweep), plane cut (keeps 47%), carve, erase, stamp into clay, clay as a stamp into an object, mixed undo with the current engine's saw, every layer operation, Hold, the stabiliser, the support-hand smooth, the palm-up swap, haptic ticks, finish, the asset bench, expression pulses, a recorded expression saved and reloaded from the .glb, the emblem (4 layers, colours, spin, Spin clip in the .glb, undo), the menu (62 rows, every icon resolves, every SVG parses, 49 one-step lessons). **Figures:** after every brush, the saw and a shape cut, the skin indices, skin weights, rest shape, an existing key ("Smile"), the bones, bone inverses and bind matrix are byte-identical; the .glb reloads with 11/11 bones, its weights and all keys.
+`bst_vr_sculpt_selftest.html?three=128|186&engine=next` (append `&only=clay,brushes,shapes,cutter,layers,hold,figure,export,worker,timing,flow,emblem,rod,looks,together,avatars,menu` for parts). Every existing check of the current engine passes on the next engine (r128 and r186), then about 300 more (340 values in all on each revision): clay watertight with exact undo / redo, mirror / 360 / both, each brush's effect with exact undo (12/12), shapes and gizmo, booleans, saw (one undo per sweep), plane cut, carve, erase, stamp into clay, clay as a stamp into an object, mixed undo with the current engine's saw, every layer operation, Hold, the stabiliser, the support-hand smooth, the palm-up swap, haptic ticks, the asset bench, expression pulses, a recorded expression saved and reloaded from the .glb, the emblem (parts, colours, depth, spin, Spin clip in the .glb, brushable, undo, built in slices), the rod (follows the path, undo / redo), **the colour wheel** (hue, strength, light, see-through, building a gradient with + and −, sculpting beside it, closing), see-through rods, the Gradient tool along a line and its undo, a marble skin, a gradient on clay, looks on rods and clay (chrome, glass with see-through, pearl), people left alone, a dressed rod saved with its metal, **sculpting together** (alone, a late join with the same work, both on the same clay at once, a shape from one person's menu, undo refused and then allowed, the emblem and its spin the same on both, a figure key, the emblem built **by hand** by two people at once and joined, spun and saved, dressing it together, four people, someone leaving, a drifted headset repaired), **avatars** (two people sculpting, each seen by the other in their own look and gradient; one as a rigged MakeHuman-named figure with head and wrist exactly on the person's, one built-in; a look change seen live; leaving removes it), the menu (every icon resolves, every SVG parses, every lesson one step). **Figures:** after every brush, the saw and a shape cut, the skin indices, skin weights, rest shape, an existing key ("Smile"), the bones, bone inverses and bind matrix are byte-identical; the .glb reloads with 11/11 bones, its weights and all keys.
 
 ## What could not be tested here
 
 - Real fingertips on Ruth's Quest, the Quest's own frame rate (GPU) and the headset log beats; module workers in the Quest Browser (the engine falls back to the page thread if the worker does not start).
-- The palm-up detection and the haptic tick on real hardware; the `vr_core.js` hook inside the live Atelier / BSA pages (those pages, `female.glb` and the app's models were not in the package; the hook passes a syntax check and is guarded).
+- **Two real headsets** over a real network: only two browser tabs on one computer over the real relay (and 2 or 4 engines in one page). Latency over the internet, a dropped Wi-Fi link, and a Quest Browser and a desktop Chrome together (the shared order needs the same maths on each; a mismatch would be caught and repaired by the checksum, at the cost of a moment's resend) were not tried.
+- **A real MakeHuman export**: none was in the package, so the rigged path was tested on a stand-in built with MakeHuman's "default" bone names. Mixamo and Blender (Rigify) names are in the list but untested. MakeHuman's exports are free to use (CC0).
+- The shared room itself (`VRCore` carrying and object poses are another module, not in the package): sculpting together assumes both headsets see the same room in the same place, the same figure and the same room objects by name.
+- Metal, chrome and pearl need the room's environment light (the Atelier's `scene.environment`); without one they look dark. Glass is see-through by opacity (not refraction), which is lighter for the Quest. The toon look saves as a standard material in the .glb (glTF has no toon).
+- The first use of a tool in a page runs slower once while the browser compiles its code (measured above); later uses are fast.
+- The palm-up detection and the haptic tick on real hardware; the `vr_core.js` hooks inside the live Atelier / BSA pages (those pages, `female.glb` and the app's models were not in the package; the hooks pass a syntax check and are guarded).
 - The existing check `renderedChange` fails on the built test figure for both engines (camera framing written for `female.glb`), so it says nothing either way here.
-- Textures from the Atelier's library and its skin shaders on clay: clay works are not yet in the Atelier's own object list (`VRObjects`, not in the package), so its Style panel cannot pick them; clay has vertex paint and per-layer finish meanwhile. Whether the Atelier plays a library item's animation clips (Spin, expressions) was not checked.
+- Textures from the Atelier's library and its skin shaders on clay: clay works are not in the Atelier's own object list (`VRObjects`, not in the package), so its Style panel cannot pick them; clay and objects have the wheel, gradients, skins and looks meanwhile.
 - Adobe's own help pages (blocked), so Substance's full controller table.
 
 ## New wrist-menu tiles (with their picture-tile icon names)
@@ -110,29 +150,41 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | CLAY | Scrape | `scrapeIc` |
 | CLAY | Smear | `smearIc` |
 | CLAY | Dots | `dotsIc` |
-| CLAY | Mode: add / subtract / paint / intersect | `opAddIc / opSubIc / opPaintIc / opIntersectIc` |
-| CLAY | Colour: clay / terracotta / sky / leaf / sun / lilac / bone / slate | `tintIc` |
+| CLAY | Mode: add / subtract / paint / intersect | `opAddIc` / `opSubIc` / `opPaintIc` / `opIntersectIc` |
 | CLAY | Size N cm | `brushSize` |
 | CLAY | Strength N% | `strengthBars` |
-| CLAY | Symmetry: off / mirror / 360 / mirror + 360 | `symOff / symMirror / symRound / symBoth` |
+| CLAY | Symmetry: off / mirror / 360 / mirror + 360 | `symOff` / `symMirror` / `symRound` / `symBoth` |
 | CLAY | Steady: off / some / lots | `steadyIc` |
 | CLAY | Edge: smooth / linear / sharp / flat | `falloffIc` |
 | CLAY | Clay: round / ribbon (when Clay is picked) | `clayIc` |
 | CLAY | Dots: balls / rings / cubes / spikes (when Dots is picked) | `dotsIc` |
-| CLAY | Finish: matte / satin / gloss / metal / glow | `finishIc` |
 | CLAY | Other hand smooths: on / off | `supportIc` |
-| CLAY | New asset / Back to the figure | `assetIc / backFigureIc` |
+| CLAY | New asset / Back to the figure | `assetIc` / `backFigureIc` |
+| CLAY | Sculpt together / Together: N people | `togetherIc` |
+| CLAY | My avatar: <look> | `lookIc` |
+| CLAY | My avatar colours: my colour / <gradient> | `gradientIc` |
+| CLAY | Rod, Twist: N°, Rod end: tapered / blunt | `rodIc`, `twistIc`, `taperIc` |
+| CLAY | Make the emblem | `emblemIc` |
+| CLAY | Ball | `ballIc` |
+| CLAY | Colour wheel (opens the wheel: colour, light, see-through, gradient strip with + and -) | `wheelIc` |
+| CLAY | Gradient: from Colour / emblem blue / emblem orange / sunset / ocean / ... / custom | `gradientIc` |
+| CLAY | Gradient tool | `gradientIc` |
+| CLAY | Skin: smooth / marble / wood / scales / speckle / stripes / spots / camo / clouds (when the Gradient tool is picked) | `skinIc` |
+| CLAY | Look tool | `lookIc` |
+| CLAY | Look: matte / satin / gloss / metal / chrome / glow / glass / pearl / velvet / candy / toon | `finishIc` |
+| CLAY | Join pieces | `joinIc` |
+| CLAY | Spin: on / off | `spinIc` |
 | CLAY | Expressions ▸ | `motionIc` |
 | EXPRESSIONS | ▶ <shape key> (one tile per key, tap to play it) | `pulseIc` |
 | EXPRESSIONS | Pulse: quick / normal / slow | `pulseSpeedIc` |
 | EXPRESSIONS | Plays: once / 3 times | `repeatIc` |
 | EXPRESSIONS | Record face / Stop recording | `recordFaceIc` |
 | EXPRESSIONS | Play the move | `playMoveIc` |
-| CLAY | Undo stroke / Redo stroke | `undoStroke / redoStroke` |
+| CLAY | Undo stroke / Redo stroke | `undoStroke` / `redoStroke` |
 | CLAY | Shapes ▸ | `shapesIc` |
 | CLAY | Layers ▸ | `layersIc` |
 | SHAPES | Place a shape | `placeShapeIc` |
-| SHAPES | Shape: sphere / cube / cylinder / cone / torus / capsule | `primSphere / primCube / primCylinder / primCone / primTorus / primCapsule` |
+| SHAPES | Shape: sphere / cube / cylinder / cone / torus / capsule | `primSphere` / `primCube` / `primCylinder` / `primCone` / `primTorus` / `primCapsule` |
 | SHAPES | Apply shape | `applyShapeIc` |
 | SHAPES | Drop shape | `dropShapeIc` |
 | SHAPES | Blend: hard / soft / very soft | `blendIc` |
@@ -155,7 +207,9 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | LAYERS | Budget: all / 5k / 20k / 50k / 100k | `budgetIc` |
 | LAYERS | Save clay | `floppy` |
 
-## One lesson step per tool
+New icons in this package (63): `clayIc`, `flattenIc`, `pinchIc`, `scrapeIc`, `smearIc`, `dotsIc`, `opAddIc`, `opSubIc`, `opPaintIc`, `opIntersectIc`, `tintIc`, `symBoth`, `steadyIc`, `falloffIc`, `shapesIc`, `layersIc`, `primSphere`, `primCube`, `primCylinder`, `primCone`, `primTorus`, `primCapsule`, `placeShapeIc`, `applyShapeIc`, `dropShapeIc`, `blendIc`, `makeClayIc`, `holdIc`, `clayFigIc`, `layerAddIc`, `dupIc`, `mergeIc`, `groupIc`, `ungroupIc`, `mergeGroupIc`, `trashIc`, `remeshIc`, `detailIc`, `budgetIc`, `layerPickIc`, `assetIc`, `backFigureIc`, `finishIc`, `supportIc`, `motionIc`, `pulseIc`, `pulseSpeedIc`, `repeatIc`, `recordFaceIc`, `playMoveIc`, `emblemIc`, `spinIc`, `rodIc`, `twistIc`, `taperIc`, `wheelIc`, `gradientIc`, `skinIc`, `lookIc`, `ballIc`, `joinIc`, `togetherIc`, `sculptNextIc`.
+
+## One lesson step per tool (63)
 
 | Tool | The step (shown on the lesson card, with a Show me button for the tile) | Tile it points to |
 |---|---|---|
@@ -169,7 +223,7 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | Smear | Pick Smear, pinch and drag along the surface: the clay is pushed along with your finger, like smudging. | Smear (`smearIc`) |
 | Dots | Pick Dots, then draw a line: a ball is pressed in every few centimetres. The Dots tile below switches to rings, cubes or spikes. | Dots (`dotsIc`) |
 | Add, subtract, paint, intersect | Tap the Mode tile to step through add, subtract, paint and intersect. Every brush and every shape follows it: build up, carve away, only colour, or keep only what you cover. | Mode: add (`opAddIc`) |
-| Colour | Tap Colour to choose the colour new clay and paint come out in. Then set Mode to paint and brush over clay to colour it. | Colour: clay (`tintIc`) |
+| Paint with your colour | Pick a colour on the colour wheel, then tap Mode until it says paint and brush over clay: it takes that colour. | Mode: add (`opAddIc`) |
 | Mirror and 360 | Tap Symmetry once for mirror, twice for 360, three times for both. Then make one stroke and watch the copies appear with it. | Symmetry: off (`symOff`) |
 | Steady | Tap Steady for more or less steadiness. With it on, the brush ball trails your fingertip on a short string, so a shaky line comes out smooth. | Steady: some (`steadyIc`) |
 | Edge | Tap Edge to choose how the brush fades from its middle to its rim: soft, even, sharp or flat. | Edge: smooth (`falloffIc`) |
@@ -198,13 +252,27 @@ Dev tools (not shipped, in `tools/`): `sculpt_next_serve.mjs` (serves `scripts/`
 | Budget | Tap Budget to set how many triangles a saved copy may have. Only the saved copy is thinned, and people are never thinned. | Budget: all (`budgetIc`) |
 | Save clay | Tap Save clay to put your clay in the library as a .glb, without taking the headset off. | Save clay (`floppy`) |
 | New asset | Tap New asset: the figure steps aside and your next clay starts an object of its own for the story. Save clay keeps it in the library; Back to the figure brings the figure back. | New asset (`assetIc`) |
-| Finish | Pick a clay layer, then tap Finish to step through matte, satin, gloss, metal and glow. | Finish: satin (`finishIc`) |
+| Look of a clay layer | Pick a clay layer on the Layers page, then tap Look to step through matte, satin, gloss, metal, chrome, glow, glass, pearl, velvet, candy and toon. | Look: satin (`finishIc`) |
 | Other hand smooths | Sculpt with one hand; without letting go, pinch with your other hand and rub: that hand smooths while the first keeps its brush. | Other hand smooths: on (`supportIc`) |
 | Expressions | Open Expressions and tap a shape key: the face moves into it and back, smoothly, like a real expression. | Expressions ▸ (`motionIc`) |
 | Pulse speed | Tap Pulse to choose quick (a micro-expression, 0.3 s), normal or slow (1.5 s). | Pulse: normal (`pulseSpeedIc`) |
 | Record a move | Tap Record face, play a few expressions, then Stop recording: it becomes an animation that Save figure keeps in the .glb. | Record face (`recordFaceIc`) |
 | Play the move | Tap Play the move to watch the last recorded expression move once. | Play the move (`playMoveIc`) |
-| Make the emblem | Tap Make the emblem: your two-figure emblem appears beside you in clay, in its own colours, and turns slowly. Each part is a layer you can pick and keep shaping. | Make the emblem (`emblemIc`) |
+| Make the emblem | Tap Make the emblem: your two-figure emblem appears beside you, each body a rectangular rod twisted, bent and tapered, in its own colours, turning slowly. | Make the emblem (`emblemIc`) |
+| Rod | Pick Rod, then pinch and draw a curve in the air: a solid rectangular rod follows your finger, twisted and tapered to a point. Size sets how wide it is. | Rod (`rodIc`) |
+| Twist | With Rod picked, tap Twist to choose how far the next rod turns from one end to the other: 0, 90, 180, 360 or 540 degrees. | Twist: 180° (`twistIc`) |
+| Rod end | With Rod picked, tap Rod end: tapered draws the end out to a point, blunt keeps it full size. | Rod end: tapered (`taperIc`) |
 | Spin | Pick some clay, then tap Spin: the whole work turns slowly round, one turn every 10 seconds. Tap again and it eases to a stop. Save clay keeps the spin. | Spin: off (`spinIc`) |
+| Ball | Pick Ball, pinch where you want the middle of a head, and pull your hand away: the ball grows with you. Let go and it stays, smooth and in a gradient. | Ball (`ballIc`) |
+| Colour wheel | Tap Colour wheel: a wheel floats beside your hand. Pinch on it and slide: round it changes the colour, from the middle out makes it stronger. Clay, paint, rods and balls take that colour. | Colour wheel (`wheelIc`) |
+| Light and see-through | On the colour wheel, pinch the bar on the right and slide up for lighter, down for darker; the bar on the left makes the colour see-through as you slide down. | Colour wheel (`wheelIc`) |
+| Build a gradient | On the colour wheel, pick a colour and tap +, pick another and tap + again: the strip under the wheel is your gradient. Tap a marker to change that colour, slide it to move it, - takes it out. | Colour wheel (`wheelIc`) |
+| Gradients | Tap the Gradient tile to step through ready-made gradients: your emblem's blue and orange, sunset, ocean, fire, gold, rainbow and more. Rods and balls come out in it. | Gradient: sunset (`gradientIc`) |
+| Gradient tool | Pick the Gradient tool, pinch on a rod, a ball, an object or clay, and drag across it: the gradient lies along your line, first colour where you started. | Gradient tool (`gradientIc`) |
+| Skins | With the Gradient tool picked, tap Skin for marble, wood, scales, speckle, stripes, spots, camo or clouds, then tap an object: the pattern wraps round it in your gradient's colours. | Skin: marble (`skinIc`) |
+| Look tool | Pick a look with the Look tile (gloss, metal, chrome, glass, pearl, velvet, glow, toon...), then pick the Look tool and pinch an object or clay: it takes that look. | Look tool (`lookIc`) |
+| Join pieces | When your rods and balls are where you want them, tap Join pieces: they become one object, so Hold moves it, Spin turns it and Save keeps it as one. | Join pieces (`joinIc`) |
+| Your avatar | Tap My avatar to choose how you look to the people you sculpt with: pearl, glow, metal, glass and more; My avatar colours puts a gradient on you, feet to head. | My avatar: pearl (`lookIc`) |
+| Sculpt together | Tap Sculpt together; when your collaborator taps it too, you see them as a person in the look they chose, with their name over them, and everything either of you makes appears for both. Undo takes back only your own steps. | Sculpt together (`togetherIc`) |
 | Saw on clay | Pick Saw on the first Sculpt page and sweep it through clay with the trigger held: a slit as wide as the Size ring is cut, the rest stays. It saws figures and objects as before. | Saw (`cutIc`) |
 | Carve and stamp on clay | Carve and Stamp work on clay too: sweep Carve to dig a groove, or press a picked object in with Stamp to carve its shape out of the clay. | Carve (`carveIc`) |
