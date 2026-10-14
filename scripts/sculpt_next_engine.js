@@ -22,6 +22,7 @@ import { makeExport } from './sculpt_next_export.js';
 import { makeMenu, ICONS, LESSONS, TILES, BRUSH } from './sculpt_next_ui.js';
 import { makeControllerViews, buttonLabels } from './sculpt_next_controllers.js';
 import { makePalette } from './sculpt_next_palette.js';
+import { keepAllKeys } from './sculpt_next_morphs.js';
 import { makeMotion } from './sculpt_next_motion.js';
 import { buildEmblemGen } from './sculpt_next_emblem.js';
 import { GRADIENT_NAMES, gradientOf, alphaAt, colourAt as gradColour, SKIN_NAMES, placeOf, LOOK_NAMES, makeMaterial } from './sculpt_next_looks.js';
@@ -99,7 +100,7 @@ export function createVrSculpt(THREE, core, host) {
   const assets = [];   /* objects this engine made that are not clay: rods, the emblem ({ id, name, object, kind }) */
   const assetMeshes = () => { const out = []; assets.forEach(a => { if (a.object.parent) a.object.traverse(o => { if (o.isMesh && o.geometry && !/^vr/.test(o.name || '')) out.push(o); }); }); return out; };
   let targetsCache = [];
-  function targets() { const all = (asset ? [] : collect(figure)).concat(propMeshes()); tubeMeshes().concat(assetMeshes()).forEach(m => { if (!all.includes(m)) all.push(m); }); const ok = all.filter(m => !(m.userData && m.userData.figLocked)); targetsCache = meshFilter ? ok.filter(meshFilter) : ok; return targetsCache; }
+  function targets() { const all = (asset ? [] : collect(figure)).concat(propMeshes()); tubeMeshes().concat(assetMeshes()).forEach(m => { if (!all.includes(m)) all.push(m); }); const ok = all.filter(m => !(m.userData && m.userData.figLocked)); ok.forEach(m => { if (m.morphTargetInfluences && !(m.userData && m.userData.sculptAllKeys)) keepAllKeys(THREE, m); }); targetsCache = meshFilter ? ok.filter(meshFilter) : ok; return targetsCache; }   /* every key shows at once even on three.js before r133 (sculpt_next_morphs.js) */
 
   const LINEAR = parseInt(THREE.REVISION, 10) >= 152 && !(THREE.ColorManagement && THREE.ColorManagement.enabled === false);
   const curRGB = c => { const h = String((c || cfg).rgb || ''); return /^#[0-9a-f]{6}$/i.test(h) ? [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)) : CLAY_COLORS[((c || cfg).tint || 0) % CLAY_COLORS.length]; };   /* the wheel's colour, 0..255 */
@@ -668,7 +669,7 @@ export function createVrSculpt(THREE, core, host) {
     peerPose.forEach((pose, id) => {
       if (!pose.head) return; let a = avatars.get(id) || makePeerAvatar(id); const st = avatarStyle(id);
       if (st.url && st.url !== a.url && host.loadAvatar && !a.loading) {   /* their own figure (a MakeHuman export...), loaded once; the built-in one stands in meanwhile */
-        a.loading = true; const want = st.url; Promise.resolve(host.loadAvatar(want)).then(fig => { if (!fig || !avatars.has(id)) return; const r = rigAvatar(THREE, fig, { name: id }); r.setLook(st.look, st.stops); const old = avatars.get(id); try { if (old.av.root.parent) old.av.root.parent.remove(old.av.root); } catch (e) { /* gone */ } try { host.addObject ? host.addObject(r.root) : null; } catch (e) { /* host */ } const x = ctxs.get(id), tag = nameTag(x ? x.name : id, PEER_COLORS[slotOf(id)]); if (tag && r.bones.head) { tag.position.set(0, 0.25, 0); r.bones.head.add(tag); } avatars.set(id, { av: r, sig: st.sig, url: want }); }).catch(() => { a.loading = false; a.url = want; });
+        a.loading = true; const want = st.url; Promise.resolve(host.loadAvatar(want)).then(fig => { if (!fig || !avatars.has(id)) return; const r = rigAvatar(THREE, fig, { name: id }); keepAllKeys(THREE, r.root); r.setLook(st.look, st.stops); const old = avatars.get(id); try { if (old.av.root.parent) old.av.root.parent.remove(old.av.root); } catch (e) { /* gone */ } try { host.addObject ? host.addObject(r.root) : null; } catch (e) { /* host */ } const x = ctxs.get(id), tag = nameTag(x ? x.name : id, PEER_COLORS[slotOf(id)]); if (tag && r.bones.head) { tag.position.set(0, 0.25, 0); r.bones.head.add(tag); } avatars.set(id, { av: r, sig: st.sig, url: want }); }).catch(() => { a.loading = false; a.url = want; });
       }
       if (st.sig !== a.sig) { a.av.setLook(st.look, st.stops); a.sig = st.sig; }
       a.av.update(pose, dt);
@@ -738,6 +739,7 @@ export function createVrSculpt(THREE, core, host) {
     assets: () => assets.filter(a => a.object.parent), makeEmblem: o => { if (collab.on && !curCtx) { o = o || {}; collab.act('emblem', [{ height: o.height, spin: o.spin, turn: o.turn, at: emblemAt(o).toArray() }]); return true; } return makeEmblem(o); },
     spin: (obj, T) => { obj = obj || (clay.active && clay.active.work.group); if (!obj) return false; if (collab.on && !curCtx) { const r = refOf(obj); if (!r) return false; collab.act('spin', [r, T || 0]); return true; } return spinNow(obj, T); },
     joinPieces: pub('join', joinPieces), keepWork: keepWorkNow, openWork: openWorkNow, keptWorks: () => { refreshKept(); return kept; }, forgetWork: id => forgetWork(id).then(refreshKept), controls: controlsFrame, get palette() { return palette; }, get controllers() { return views; }, showsControllers: () => views.shown(), buttonLabels: () => labelsNow(), controlMap: CONTROL_MAP, selected: () => ctl.selected, openWheel, closeWheel: () => wheel.close(), wheel, gradients: GRADIENT_NAMES, skins: SKIN_NAMES, looks: LOOK_NAMES, paintStops: () => paintStops(cfg), playMotionLocal: playNow, newAsset: pub('newAsset', newAsset), endAsset: pub('endAsset', endAsset), get assetBench() { return !!asset; },
+    keepAllKeys: root => keepAllKeys(THREE, root),   /* for the page: any figure whose face plays more than 8 shape keys at once */
     icons: ICONS, lessons: LESSONS, tiles: TILES, colors3: CLAY_COLORS, pickedObject: () => { const s = stampSources(); return s ? s.roots[0] : null; },
   };
   vs.menu = makeMenu(vs, { say });

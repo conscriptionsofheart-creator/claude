@@ -448,6 +448,31 @@ export async function runNextTests(T, ctx) {
     cleanup(vs); scene.remove(gS, gT);
   });
 
+  /* ---------- more than 8 shape keys at once (The Living Face, ch. 11): three.js before r133 draws only 8 and drops the rest ---------- */
+  await section('morphs', async () => {
+    const { keepAllKeys, morphLimit } = await import('/pe_lib/sculpt_next_morphs.js'), R = ctx.renderer; if (!R) { res.mk_skipped = 'no renderer'; return; }
+    /* 12 triangles, each collapsed to a point at rest; key k opens triangle k at its own place on screen. With all 12 keys at 1, all 12 must show. */
+    const K = 12, pos = new Float32Array(K * 9), keys = [], cx = k => -0.75 + (k % 4) * 0.5, cy = k => 0.5 - Math.floor(k / 4) * 0.5;
+    for (let k = 0; k < K; k++) for (let v = 0; v < 3; v++) { pos[k * 9 + v * 3] = cx(k); pos[k * 9 + v * 3 + 1] = cy(k); }
+    for (let k = 0; k < K; k++) { const d = new Float32Array(K * 9), o = k * 9; d[o + 0] = -0.15; d[o + 1] = -0.15; d[o + 3] = 0.15; d[o + 4] = -0.15; d[o + 7] = 0.15; keys.push(new T.BufferAttribute(d, 3)); }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(pos, 3)); g.morphAttributes.position = keys; g.morphTargetsRelative = true;
+    const mat = new T.MeshBasicMaterial({ color: 0xffffff, side: T.DoubleSide }); if ('morphTargets' in mat) mat.morphTargets = true;
+    const mesh = new T.Mesh(g, mat); mesh.updateMorphTargets(); mesh.morphTargetInfluences.fill(1); mesh.frustumCulled = false;
+    const sc = new T.Scene(); sc.background = new T.Color(0x000000); sc.add(mesh); const cam = new T.OrthographicCamera(-1, 1, 1, -1, 0.1, 10); cam.position.z = 5;
+    const size = R.getSize(new T.Vector2()), W = size.x, H = size.y;
+    const shown = () => { R.render(sc, cam); R.render(sc, cam);   /* the sum shows one frame after a change */ const c = document.createElement('canvas'); c.width = W; c.height = H; const g2 = c.getContext('2d'); g2.drawImage(R.domElement, 0, 0); const px = g2.getImageData(0, 0, W, H).data; let n = 0; for (let k = 0; k < K; k++) { const x = Math.round((cx(k) + 1) / 2 * W), y = Math.round((1 - (cy(k) - 0.08 + 1) / 2) * H), i = (y * W + x) * 4; if (px[i] > 128) n++; } return n; };
+    res.mk_limit = String(morphLimit(T, mat)); res.mk_before = shown();
+    res.mk_fitted = keepAllKeys(T, mesh); res.mk_after = shown(); res.mk_allShow = b(res.mk_after === K);
+    /* nothing changed for good: weights and keys read as they were */
+    res.mk_untouched = b(mesh.morphTargetInfluences.length === K && mesh.morphTargetInfluences.every(v => v === 1) && g.morphAttributes.position[0] === keys[0]);
+    /* a weight change shows; a still face is not summed again */
+    const sums0 = mesh.userData.sculptAllKeys ? mesh.userData.sculptAllKeys.sums : 0; shown(); const sums1 = mesh.userData.sculptAllKeys ? mesh.userData.sculptAllKeys.sums : 0;
+    mesh.morphTargetInfluences[11] = 0; const n11 = shown(); res.mk_followsWeights = b(n11 === K - 1); res.mk_noResum = b(sums1 === sums0);
+    { const big = new T.BufferGeometry(), n = 10000, p = new Float32Array(n * 3), ks = []; for (let k = 0; k < 12; k++) ks.push(new T.BufferAttribute(new Float32Array(n * 3).fill(0.001), 3)); big.setAttribute('position', new T.BufferAttribute(p, 3)); big.morphAttributes.position = ks; big.morphTargetsRelative = true;
+      const m2 = new T.Mesh(big, mat); m2.updateMorphTargets(); keepAllKeys(T, m2); const t0 = now(); for (let r = 0; r < 20; r++) { m2.morphTargetInfluences.fill(0.5 + r * 0.01); m2.onBeforeRender({ info: { render: { frame: 1000 + r } } }, sc, cam, big, mat, null); m2.onAfterRender(R, sc, cam, big, mat, null); } res.mk_sumMs10k = r2((now() - t0) / 20); }
+    g.dispose(); mat.dispose();
+  });
+
   /* ---------- from the Quest collaborative-creation report (Ruth 2026-10-14): Draw strokes, Keep work, your stroke at once, who made what, dropping out and rejoining ---------- */
   await section('report', async () => {
     const tick = () => new Promise(r => setTimeout(r, 0));

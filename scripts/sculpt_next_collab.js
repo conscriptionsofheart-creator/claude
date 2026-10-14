@@ -158,7 +158,7 @@ const packArr = a => ({ t: typeName(a), b: b64(a) }), unpackArr = p => unb64(p.b
 export function encodeGeometry(g) {
   const attr = a => ({ ...packArr(a.array), s: a.itemSize, n: !!a.normalized }), out = { a: {}, m: {}, rel: !!g.morphTargetsRelative, groups: (g.groups || []).map(x => [x.start, x.count, x.materialIndex || 0]) };
   Object.keys(g.attributes).forEach(k => { out.a[k] = attr(g.attributes[k]); });
-  Object.keys(g.morphAttributes || {}).forEach(k => { out.m[k] = g.morphAttributes[k].map(a => ({ ...attr(a), name: a.name || '' })); });
+  Object.keys(g.morphAttributes || {}).filter(k => k !== 'sculptAllKeys').forEach(k => { out.m[k] = g.morphAttributes[k].map(a => ({ ...attr(a), name: a.name || '' })); });
   if (g.index) out.i = packArr(g.index.array); return out;
 }
 export function decodeGeometry(THREE, o) {
