@@ -1,0 +1,48 @@
+{
+  "id": "walk-settings",
+  "name": "Walk speed, gravity and fly limits",
+  "area": "Settings",
+  "group": "BSA",
+  "summary": "Set how fast you walk and run, how heavy gravity is, how high you jump and how fast you can fly. The edges of your view darken a little when you go fast, to keep you comfortable.",
+  "helps": "Move through a big scene quickly or float like the moon, without feeling sick.",
+  "where2d": "Atelier and BSA, right panel, Settings: Walk settings.",
+  "whereVR": "Wrist menu > Settings > Walk settings",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the right panel and find Settings.",
+      "Press Walk settings.",
+      "Press Player Speed, Player Gravity, Run, Fly speed cap or Jump height to step through the choices."
+    ],
+    "vr": [
+      "Open the wrist menu and press Settings, then Walk settings.",
+      "Press Player Speed to step through the speeds.",
+      "Press Player Gravity. Zero floats you, 9.81 is Earth."
+    ],
+    "use": [
+      "speed goes from 0 to 45 metres a second",
+      "gravity goes from 0 to 9.81, and 0 floats you",
+      "the view edges darken only when you go faster than walking, and never flicker",
+      "when you fly you pass through walls but not the floor",
+      "a seat holds you still."
+    ]
+  },
+  "keywords": ["walk", "run", "jump", "fly", "speed", "gravity", "vignette", "comfort", "float"],
+  "related": ["lesson-walk", "vr-fly", "vr-walk", "seat-gizmo-v2"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Settings", "VR"],
+  "changes": [
+    {
+      "id": "walk-settings-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now set your walking speed, gravity, jump height and fly speed, and the view edges soften when you go fast, so open Settings and press Walk settings.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Walk settings" },
+      "tiles": ["Walk settings"]
+    }
+  ]
+}
