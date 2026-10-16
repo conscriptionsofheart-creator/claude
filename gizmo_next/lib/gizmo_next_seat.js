@@ -106,6 +106,12 @@
         return { ok: true };
       }
       API.occupant = function (id) { return occ[String(id)] || null; };
+      /* a friend's page: show who the host says is sitting, so a taken seat reads as taken. No rig moves. */
+      API.mirror = function (id, who, state) {
+        id = String(id); if (!/^[A-Za-z0-9_-]{1,40}$/.test(id) || BAD[id]) return false;
+        if (state === 'enter') occ[id] = str(who, 40) || 'someone'; else if (state === 'exit') delete occ[id]; else return false;
+        return true;
+      };
       API.seated = function (who) { var s = sess[whoKey(typeof who === 'string' ? { id: who } : who || meV())]; return s ? s.seatId : null; };
 
       /* ---------- the Walk-mode pop-up: near, facing it, walking and not flying ---------- */

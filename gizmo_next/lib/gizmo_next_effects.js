@@ -328,7 +328,7 @@
       });
 
       API.kind = kapi;
-      API.add = function (spec) { return kapi.add(spec || {}); };
+      API.add = function (spec) { if (g.isGuest()) { msg('Only the host places gizmos.'); return null; } return kapi.add(spec || {}); };
       API.get = function (id) { return kapi.get(id); };
       API.list = function () { return kapi.list.slice(); };
       API.setFields = function (id, patch) { if (g.isGuest()) return null; return kapi.set(id, patch); };

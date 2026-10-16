@@ -1,0 +1,49 @@
+{
+  "id": "gizmo-sync",
+  "name": "Gizmos with a friend",
+  "area": "Settings",
+  "group": "BSA",
+  "summary": "When a friend joins your room, they see the same triggers, effects, seats and beats you have. When something happens on your side, it happens on theirs a moment later.",
+  "helps": "Greet a friend at the door, with the wave and the voice in step with you, and know they cannot change or keep your scene.",
+  "where2d": "Atelier and BSA, right panel, Settings: Gizmos live.",
+  "whereVR": "Wrist menu > Settings > Gizmos live",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Build your scene with triggers, effects and beats.",
+      "Turn Gizmos live on.",
+      "Invite a friend. They see your scene after a few seconds.",
+      "When they walk into a trigger, it greets them."
+    ],
+    "vr": [
+      "Open the wrist menu and press Settings, then Gizmos live.",
+      "Invite a friend through the guest door.",
+      "Stand back and watch the trigger greet them."
+    ],
+    "use": [
+      "you decide everything and your friend follows",
+      "your friend sees the greeting within a third of a second of you",
+      "a seat you are sitting in shows as taken for your friend",
+      "your friend cannot save, export or download your scene",
+      "nothing is sent in a private project"
+    ]
+  },
+  "keywords": ["friend", "guest", "sync", "room", "join", "greeting", "live", "share"],
+  "related": ["trigger-box", "beats", "seat-gizmo-v2", "spawn-point-v2", "effects-gizmo"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Settings", "VR"],
+  "changes": [
+    {
+      "id": "gizmo-sync-2026-10-16",
+      "date": "2026-10-16",
+      "note": "Your friend now sees your triggers, effects, seats and beats when they join, and sees a greeting start in step with you, so turn Gizmos live on and invite them.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Gizmos live" },
+      "tiles": ["Gizmos live"]
+    }
+  ]
+}

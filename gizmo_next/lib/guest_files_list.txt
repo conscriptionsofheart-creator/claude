@@ -1,0 +1,10 @@
+gizmo_next_core.js
+gizmo_next_beats.js
+gizmo_next_actions.js
+gizmo_next_trigger.js
+gizmo_next_ragdoll.js
+gizmo_next_spawn.js
+gizmo_next_seat.js
+gizmo_next_walk.js
+gizmo_next_effects.js
+gizmo_next_sync.js

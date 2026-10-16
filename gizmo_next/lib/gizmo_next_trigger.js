@@ -128,7 +128,7 @@
         var word = type === 'leave' ? ' left' : ' entered';
         var entry = g.log({ who: rec.name, what: (v.name || 'Someone') + word + (isTest ? ' (test)' : '') });
         g.emit('fire', { trigger: rec, id: rec.id, who: v, type: type, test: !!isTest });
-        g.send('trigger', { id: rec.id, who: str(v.name, 40), what: entry.what });
+        g.send('trigger', { id: rec.id, fired: true, who: str(v.name, 40), t: r2(nowS()), what: entry.what });
         if (rec.cooldown > 0) rec._cool = nowS() + rec.cooldown;
         cleanStarts(rec.starts).forEach(function (s) {
           if (s.delay > 0) g.after(s.delay, function () { runStart(rec, v, s); }, 'trigger:' + rec.id);
@@ -238,7 +238,7 @@
 
       /* ---------- the public API ---------- */
       API.kind = kapi;
-      API.add = function (spec) { return kapi.add(spec || {}); };
+      API.add = function (spec) { if (g.isGuest()) { msg('Only the host places gizmos.'); return null; } return kapi.add(spec || {}); };
       API.get = function (id) { return kapi.get(id); };
       API.list = function () { return kapi.list.slice(); };
       API.visitors = function (id) { var m = inside[id] || {}; return Object.keys(m).map(function (k) { var v = m[k].v; return { id: v.id, name: v.name, guest: !!v.guest, kind: v.kind }; }); };
@@ -295,7 +295,7 @@
         onLive: function () { inside = {}; cursor = 0; told = {}; },
         sync: { parts: { trigger: {
           encode: function () { return totalFires ? { n: totalFires } : null; },
-          validate: function (v) { return isObj(v) && ((isNum(v.n) && v.n >= 0) || (typeof v.id === 'string' && typeof v.what === 'string')); },
+          validate: function (v) { return isObj(v) && ((isNum(v.n) && v.n >= 0) || (typeof v.id === 'string' && v.id.length <= 40 && v.fired === true && typeof v.who === 'string' && v.who.length <= 40 && isNum(v.t) && v.t >= 0 && v.t < 1e7 && (v.what === undefined || (typeof v.what === 'string' && v.what.length <= 200)))); },
           apply: function (v) { if (typeof v.what === 'string') g.log({ who: 'trigger', what: plain(v.what) }); }
         } } },
         dispose: function () { inside = {}; }

@@ -45,6 +45,7 @@
       scripts: window.ObjScripts || null,                                   /* obj_scripts.js */
       hand: side => G(() => { const c = VRCore.controllerPos && VRCore.controllerPos(side); return c ? [c.x, c.y, c.z] : null; }, null), /* H8, SEAT: world position of 'left' or 'right' hand/controller, or null; name the real VRCore call */
       particleFlow: window.ParticleFlow ? { budget: () => G(() => ParticleFlow.budget, 0), used: () => G(() => (ParticleFlow.live ? ParticleFlow.live() : 0), 0) } : null, /* H8, SEAT: particle_flow.js budget and live count so effects share one budget; check the real names */
+      mirror: { seats: list => G(() => window.SeatGizmo && SeatGizmo.mirror && SeatGizmo.mirror(list)), spawns: list => G(() => window.SpawnPoint && SpawnPoint.mirror && SpawnPoint.mirror(list)) }, /* H9, SEAT: on a friend's page, make the host's seat and spawn lists appear (records {id,name,x,y,z,yaw,preset}); no such call exists yet, add one that creates read-only copies */
       gizmos: window.Gizmos || null,                                        /* gizmos.js: the registry that Hide gizmos and Photo use */
       audio: { get context() { return G(() => Sounds.audio(), null); }, get destination() { return G(() => Sounds.audio().destination, null); } }, /* the page's one AudioContext */
       storage: {                                                            /* guarded localStorage */

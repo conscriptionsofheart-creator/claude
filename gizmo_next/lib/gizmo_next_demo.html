@@ -59,6 +59,7 @@
     <div class="row"><button id="addSeat" type="button">Add seat</button><button id="walkSeat" type="button">Walk to the seat</button><button id="sitBtn" type="button">Sit</button><button id="standBtn" type="button">Stand</button></div>
     <div class="row"><button id="wkWalk" type="button">Walk 1 s</button><button id="wkRun" type="button">Run 1 s</button><button id="wkJump" type="button">Jump</button><button id="wkFly" type="button">Fly up 1 s</button><button id="wkSpeed" type="button">Speed: 4</button></div>
     <div class="row"><button id="addFx" type="button">Add effects gizmo</button><button id="fxOnce" type="button">Play once</button><button id="fxLoop" type="button">Loop</button><button id="fxStop" type="button">Stop</button><button id="fxPreset" type="button">Preset: sparks</button><button id="fxColour" type="button">Colour: gold</button></div>
+    <div class="row"><button id="friendTest" type="button">Pretend friend joins (host + guest, 80 ms delay)</button><span id="friendOut" class="dim"></span></div>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -99,6 +100,7 @@
 <script src="gizmo_next_seat.js"></script>
 <script src="gizmo_next_walk.js"></script>
 <script src="gizmo_next_effects.js"></script>
+<script src="gizmo_next_sync.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
 <script src="gizmo_next_actions_selftest.js"></script>
@@ -108,6 +110,7 @@
 <script src="gizmo_next_seat_selftest.js"></script>
 <script src="gizmo_next_walk_selftest.js"></script>
 <script src="gizmo_next_effects_selftest.js"></script>
+<script src="gizmo_next_sync_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -287,6 +290,17 @@
   $('walkSeat').addEventListener('click', function () { var m = SEATS.list[0]; if (m) ctx._head = [m.x, 1.58, m.z + 0.6]; });
   $('sitBtn').addEventListener('click', function () { var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) g.modules.seat.sit(pp.seatId); else voiceLog = 'No Sit tile here: go within 0.8 m and face the seat'; });
   $('standBtn').addEventListener('click', function () { g.modules.seat.stand(); });
+  /* H9: a host page and a friend's page in memory, joined by a room with 80 ms of delay */
+  $('friendTest').addEventListener('click', function () {
+    var H = kit.makeHostGuest({ latencyMs: 80, host: { head: [0, 1.6, 30], peers: [] }, guest: {} }), hm = H.host.modules, gmod = H.guest.modules;
+    hm.beats.pinsSet([{ id: 'a', t: 0, slot: 'f1', kind: 'pose', pose: { x: 0 } }, { id: 'b', t: 3, slot: 'f1', kind: 'pose', pose: { x: 1 } }]); hm.beats.setRange('Greeting', 0, 3);
+    var tr = hm.trigger.add({ x: 0, y: 1, z: 0, size: [2, 2, 2], armed: true, starts: [{ do: 'beats', arg: 'Greeting', delay: 0 }] }), p = kit.makePeer('g1', 'Rosa', [0, 1.6, 20], { guest: true }); H.hostCtx._peers.push(p);
+    H.host.setLive(true); H.step(3);
+    var tH = null, tG = null; H.host.on('beat-play', function () { tH = H.clock.now(); }); H.guest.on('beat-play', function () { tG = H.clock.now(); });
+    kit.movePeer(p, 0, 1.6, 0); H.step(1.5);
+    var a = hm.friends.checksum(), b = gmod.friends.checksum();
+    $('friendOut').textContent = ' friend got the scene: ' + gmod.friends.received() + ', checksums agree: ' + (a.all === b.all) + ', friend started ' + (tG !== null && tH !== null ? (tG - tH) + ' ms after the host' : 'never') + ', friend is live: ' + H.guest.isLive();
+  });
   /* H8: effects gizmos drawn as dots on the map; nothing plays until Gizmos live is on */
   var FXPRE = ['sparks', 'smoke', 'confetti', 'splash'], FXCOL = [['gold', '#ffd166'], ['cyan', '#5ae0ff'], ['pink', '#e86cd2'], ['white', '#ffffff']], fxSel = null;
   function fxRec() { var E8 = g.modules.effects, l = E8.list(); return fxSel && E8.get(fxSel) ? E8.get(fxSel) : (l.length ? l[l.length - 1] : null); }
