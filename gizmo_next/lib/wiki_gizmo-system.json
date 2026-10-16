@@ -1,0 +1,50 @@
+{
+  "id": "gizmo-system",
+  "name": "Gizmos live and gizmo boxes",
+  "area": "Props",
+  "group": "BSA",
+  "summary": "A gizmo is a see-through box with its picture and name on it. You grab it, resize it, copy it, lock it and delete it like any object. Nothing inside a gizmo runs until Gizmos live is on.",
+  "helps": "Place triggers, seats and other helpers in the room and decide when they start doing anything.",
+  "where2d": "Atelier and BSA, right panel, Gizmos: the Gizmos live switch and one Add button for each kind of gizmo.",
+  "whereVR": "Wrist menu > Objects > Gizmos: one tile for each kind. Wrist menu > Settings > Gizmos live: the switch and a short list of what ran.",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the right panel and find Gizmos.",
+      "Press Add next to a kind of gizmo. The box appears in front of you.",
+      "Drag it where you want it, then press Gizmos live to turn it on."
+    ],
+    "vr": [
+      "Open the wrist menu and press Objects, then Gizmos.",
+      "Press a gizmo tile. A box comes out and settles in your hand.",
+      "Grab it with the trigger to move it. Grab it with both hands to resize it.",
+      "Open Settings and press Gizmos live to turn it on."
+    ],
+    "use": [
+      "A gizmo does nothing until Gizmos live is on",
+      "a gizmo with an Armed switch also needs Armed on",
+      "Hide gizmos hides the boxes and everything keeps working",
+      "Photo, video and publishing leave the boxes out",
+      "a deleted gizmo comes back from Recently deleted",
+      "a friend who joins sees what the host has on, and cannot save, export or download it."
+    ]
+  },
+  "keywords": ["gizmo", "box", "live", "armed", "hide", "photo", "settings", "place", "resize", "trigger", "seat"],
+  "related": ["lesson-gizmos", "sound-gizmo", "seat-gizmo"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Props", "VR"],
+  "changes": [
+    {
+      "id": "gizmo-system-2026-10-16",
+      "date": "2026-10-16",
+      "note": "Gizmos are now see-through boxes you grab and resize like any object, and nothing in them runs until Gizmos live is on, so open Settings, press Gizmos live and place one from Objects, Gizmos.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Gizmos live" },
+      "tiles": ["Gizmos live"]
+    }
+  ]
+}
