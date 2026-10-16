@@ -170,7 +170,7 @@
       sync: o.sync || null,
       log: function (m) { ctx._logs.push(String(m)); }
     };
-    ['look', 'pose', 'pins', 'narration', 'sounds', 'seat', 'spawn', 'poseLib', 'clips', 'objCfg', 'scripts', 'ragdoll', 'face', 'camera', 'openScene', 'sharedScenes', 'songTime', 'selectedSlots', 'moveProp', 'triggerChoices', 'setObjectVisible', 'localName', 'solidAt', 'teleport', 'inRoom', 'selfId'].forEach(function (k) { if (o[k] !== undefined) ctx[k] = o[k]; });
+    ['look', 'pose', 'pins', 'narration', 'sounds', 'seat', 'spawn', 'poseLib', 'clips', 'objCfg', 'scripts', 'ragdoll', 'face', 'camera', 'openScene', 'sharedScenes', 'songTime', 'selectedSlots', 'moveProp', 'triggerChoices', 'setObjectVisible', 'localName', 'solidAt', 'teleport', 'inRoom', 'selfId', 'stature', 'surfaceAt', 'sitRig', 'standRig', 'figureSeat'].forEach(function (k) { if (o[k] !== undefined) ctx[k] = o[k]; });
     ctx._clock = clock; ctx._scene = scene; ctx._audio = audio; ctx._said = []; ctx._logs = []; ctx._redraws = 0; ctx._undos = 0;
     ctx._head = o.head || [0, 1.6, 0]; ctx._floorFn = o.floorFn || function () { return 0; }; ctx._dolly = new T.Group(); ctx._walk = { on: false, fly: false };
     ctx._guest = !!o.guest; ctx._private = !!o.private; ctx._peers = o.peers || []; ctx._figures = o.figures || []; ctx._props = o.props || [];

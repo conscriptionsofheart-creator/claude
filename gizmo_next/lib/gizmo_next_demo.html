@@ -56,6 +56,7 @@
     <div class="row"><button id="addTrig" type="button">Add trigger box</button><button id="tplGreet" type="button">Greeting at the door</button><button id="armTrig" type="button">Arm all triggers</button></div>
     <div class="row"><button id="recFall" type="button">Record a fall (3 s)</button><button id="playFall" type="button">Play last fall</button><button id="stopFall" type="button">Stop the fall</button></div>
     <div class="row"><button id="addSpawn" type="button">Add spawn point</button><button id="guestJoins" type="button">Guest joins</button><button id="testArrive" type="button">Test arrive</button></div>
+    <div class="row"><button id="addSeat" type="button">Add seat</button><button id="walkSeat" type="button">Walk to the seat</button><button id="sitBtn" type="button">Sit</button><button id="standBtn" type="button">Stand</button></div>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -93,12 +94,14 @@
 <script src="gizmo_next_trigger.js"></script>
 <script src="gizmo_next_ragdoll.js"></script>
 <script src="gizmo_next_spawn.js"></script>
+<script src="gizmo_next_seat.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
 <script src="gizmo_next_actions_selftest.js"></script>
 <script src="gizmo_next_trigger_selftest.js"></script>
 <script src="gizmo_next_ragdoll_selftest.js"></script>
 <script src="gizmo_next_spawn_selftest.js"></script>
+<script src="gizmo_next_seat_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -141,6 +144,12 @@
   ctx.spawn = SPAWN; ctx.floorFn = function () { return 0; };
   ctx.teleport = function (v, a) { ctx._head = [a.x, 1.6, a.z]; voiceLog = 'You arrived at ' + a.x + ', ' + a.z + (a.yaw === null ? '' : ', facing ' + a.yaw.toFixed(2)); };
   ctx.sync = { send: function (n, o) { if (n === 'spawn' && o.who === 'v1') { visitor.head = [o.x, 1.6, o.z]; visitor.feet = [o.x, 0, o.z]; } }, on: function () {} };
+  /* a stand-in for the page's SeatGizmo (H6) and the rig: walking to a seat shows the Sit tile, Sit lifts the head to seat plus 0.46 of stature, Stand goes back in front */
+  var SEATS = { list: [], H: 0.25, PRESETS: { chair: { h: 0.46 }, sofa: { h: 0.4 }, floor: { h: 0 }, bed: { h: 0.5, lie: true } }, add: function (spec) { var m = Object.assign({ id: 'q' + (SEATS.list.length + 1), name: 'Seat ' + (SEATS.list.length + 1), x: 0, y: 0, z: 0, yaw: 0, preset: 'chair', lie: null, locked: false, group: '' }, spec || {}); SEATS.list.push(m); return m; }, sitOn: function () {}, stand: function () {} };
+  ctx.seat = SEATS; ctx._walk = { on: true, fly: false }; ctx.stature = function () { return 1.7; };
+  ctx.sitRig = function (who, plan) { ctx._head = [plan.target[0], plan.headTarget, plan.target[2]]; voiceLog = 'Sitting: head at ' + plan.headTarget.toFixed(2) + ' m, fade ' + plan.fadeSec + ' s, blend ' + plan.blendSec + ' s'; };
+  ctx.standRig = function (who, plan) { ctx._head = [plan.x, 1.58, plan.z]; voiceLog = 'Standing in front of the seat'; };
+  ctx.poseLib = { list: function () { return ['Sit upright', 'Sit cross legged']; }, apply: function () {}, clear: function () {} };
   ctx.sounds = { playMode: function (id, m) { voiceLog = 'Sound ' + id + ': ' + m; } };
   ctx.selectedSlots = function () { return ['s0', 's1']; };
   var g = GN.create(ctx);
@@ -202,6 +211,8 @@
     });
     SPAWN.list.forEach(function (m) { var p = toPx(m.x, m.z), a = toPx(m.x - Math.sin(m.yaw) * 0.6, m.z - Math.cos(m.yaw) * 0.6); c.strokeStyle = '#5ae0b4'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], 12, 0, 7); c.stroke(); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(a[0], a[1]); c.stroke(); c.fillStyle = '#5ae0b4'; c.font = '11px system-ui'; c.textAlign = 'center'; c.fillText(m.name, p[0], p[1] + 26); });
     var hp = toPx(ctx._head[0], ctx._head[2]); c.strokeStyle = '#f3eee2'; c.lineWidth = 1; c.beginPath(); c.arc(hp[0], hp[1], 5, 0, 7); c.stroke();
+    SEATS.list.forEach(function (m) { var p = toPx(m.x, m.z); c.strokeStyle = '#b48cff'; c.lineWidth = 2; c.strokeRect(p[0] - 8, p[1] - 8, 16, 16); c.fillStyle = '#b48cff'; c.font = '11px system-ui'; c.textAlign = 'center'; c.fillText(m.name + (g.modules.seat.occupant(m.id) ? ' (taken)' : ''), p[0], p[1] + 22); });
+    var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) { var tp = toPx(pp.anchor[0], pp.anchor[2]); c.fillStyle = '#b48cff'; c.fillRect(tp[0] - 14, tp[1] - 30, 28, 16); c.fillStyle = '#15111d'; c.fillText('Sit', tp[0], tp[1] - 18); }
     var v = toPx(visitor.head[0], visitor.head[2]); c.beginPath(); c.arc(v[0], v[1], 9, 0, 7); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#ff8a5c'; c.stroke();
   }
 
@@ -265,6 +276,10 @@
   $('addSpawn').addEventListener('click', function () { var n = SPAWN.list.length + 1, m = SPAWN.add({ x: [-3, 3, -3, 3][n % 4], z: [-3, -3, 3, 3][n % 4], yaw: n * 0.7 }); if (m) g.modules.spawn.setFields(m.id, { order: n, pick: 'turns' }); });
   $('guestJoins').addEventListener('click', function () { visitor.head = [4.5, 1.6, 4.5]; visitor.feet = [4.5, 0, 4.5]; g.modules.spawn.onJoin(visitor); });
   $('testArrive').addEventListener('click', function () { g.modules.spawn.testArrive(); });
+  $('addSeat').addEventListener('click', function () { var n = SEATS.list.length, m = SEATS.add({ x: [3, -3, 3, -3][n % 4], z: [-1, -1, 3, 3][n % 4], yaw: 0 }); if (m) g.modules.seat.setFields(m.id, { useExit: true, exit: [1, 0] }); });
+  $('walkSeat').addEventListener('click', function () { var m = SEATS.list[0]; if (m) ctx._head = [m.x, 1.58, m.z + 0.6]; });
+  $('sitBtn').addEventListener('click', function () { var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) g.modules.seat.sit(pp.seatId); else voiceLog = 'No Sit tile here: go within 0.8 m and face the seat'; });
+  $('standBtn').addEventListener('click', function () { g.modules.seat.stand(); });
   $('addTrig').addEventListener('click', function () { var T3 = g.modules.trigger; var r = T3.add({ x: Math.round((Math.random() * 4 - 2) * 10) / 10, y: 1, z: Math.round((Math.random() * 4 - 2) * 10) / 10, name: 'Trigger ' + (T3.list().length + 1), starts: [{ do: 'sound', arg: 'bell', delay: 0 }] }); if (r) paint(); });
   $('tplGreet').addEventListener('click', function () { var r = g.modules.trigger.template('greeting'); if (r) { g.modules.trigger.kind.set(r.id, { x: -1.5, y: 1, z: 1.5, size: [2, 2, 2] }); } });
   $('armTrig').addEventListener('click', function () { g.modules.trigger.list().forEach(function (r) { g.modules.trigger.kind.set(r.id, { armed: true }); }); });

@@ -1,0 +1,51 @@
+{
+  "id": "seat-gizmo-v2",
+  "name": "Seat pop-up and sit pose",
+  "area": "Props",
+  "group": "BSA",
+  "summary": "Walk up to a seat and a Sit tile appears. Press it and you sit, at the right height for your body, in the pose you chose from your pose library. Pull the stick back to stand up in front of it.",
+  "helps": "Sit or lie anywhere you put a seat, and have figures sit too, without your body ever being squashed.",
+  "where2d": "Atelier and BSA, right panel, Gizmos: the seat settings.",
+  "whereVR": "Wrist menu > Objects > Gizmos > Seat",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the right panel, find Gizmos, and press Add next to Seat.",
+      "Put the seat where you want it and turn it so its arrow points the way your knees should.",
+      "Set Pose to a sit from your pose library, and set Exit Direction if you want to stand to one side.",
+      "Press Sit here, then Stand."
+    ],
+    "vr": [
+      "Open the wrist menu and press Objects, then Gizmos, then Seat. Put it down.",
+      "Turn Walk on and walk up to it. A Sit tile appears when you are close and facing it.",
+      "Press the tile. You sit. Pull the stick back to stand up.",
+      "Tap the seat to change its pose, who can use it, and which way you face when you stand."
+    ],
+    "use": [
+      "the Sit tile shows only while you walk, near the seat, facing it",
+      "your body is never made smaller: your head goes to the seat plus 0.46 of your height",
+      "the stick does nothing while you sit except pull back to stand",
+      "one person at a time sits on a seat",
+      "a seat can be for everyone, guests, just you or a named person",
+      "figures can sit with a seat beat."
+    ]
+  },
+  "keywords": ["seat", "sit", "stand", "pose", "chair", "sofa", "bed", "pop-up", "walk", "exit", "figure"],
+  "related": ["seat-gizmo", "lesson-walk", "beat-actions", "trigger-box"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Props", "VR"],
+  "changes": [
+    {
+      "id": "seat-gizmo-v2-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now press a Sit tile when you walk up to a seat and choose the sit pose from your pose library, so walk to a seat, press the tile, then pull the stick back to stand.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Gizmos live" },
+      "tiles": ["Seat"]
+    }
+  ]
+}
