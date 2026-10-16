@@ -1,0 +1,53 @@
+{
+  "id": "ragdoll-record",
+  "name": "Record a fall",
+  "area": "Animate",
+  "group": "BSA",
+  "summary": "Turn Gravity on, drop a figure, and press Record fall. The way it fell is kept as a small clip you can play again from anywhere, put on the Beat strip, and share with friends later.",
+  "helps": "Make a figure fall the same way every time, without running the physics again.",
+  "where2d": "Animate panel: Record a fall, under Beat strip.",
+  "whereVR": "Capture face > Animate > Beat strip > Record fall",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Select a figure and turn Gravity on so it can fall.",
+      "Open the Animate panel and press Record fall, then let the figure go.",
+      "When it has landed, press Stop recording.",
+      "Stand the figure up somewhere else and press Play last fall.",
+      "Press Add ragdoll beat to put the fall on the Beat strip."
+    ],
+    "vr": [
+      "Select a figure and turn Gravity on so it can fall.",
+      "Open the wrist menu, then Capture face, Animate, Beat strip, and press Record fall.",
+      "Let the figure go. When it has landed, press Stop recording the fall.",
+      "Press Play fall to see it again from wherever the figure is now.",
+      "Press Add ragdoll beat to put it on the strip, and Undo last recording to take it away."
+    ],
+    "use": [
+      "it records only after you press Record fall",
+      "the fall plays the same from any place and any way the figure faces",
+      "a recording is about 7 KB a second, and a fall that is too long is refused with a message",
+      "Undo takes the last recording away",
+      "Stop puts the figure back where it was",
+      "a friend cannot record."
+    ]
+  },
+  "keywords": ["ragdoll", "rag doll", "fall", "record", "gravity", "clip", "physics", "beat", "drop"],
+  "related": ["lesson-rag", "clip-play", "beat-strip", "beat-actions"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Animate", "VR"],
+  "changes": [
+    {
+      "id": "ragdoll-record-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now record a rag doll fall and play it again, so turn Gravity on, press Record fall, let the figure go, press Stop recording, then Play fall or Add ragdoll beat.",
+      "app": "both",
+      "target": { "where": "animate", "label": "Beat strip" },
+      "tiles": ["Beat strip"]
+    }
+  ]
+}
