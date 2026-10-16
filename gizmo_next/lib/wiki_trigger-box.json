@@ -1,0 +1,53 @@
+{
+  "id": "trigger-box",
+  "name": "Trigger box",
+  "area": "Props",
+  "group": "BSA",
+  "summary": "A trigger box is a see-through box you place in a doorway. When someone walks into it, it can play beats, a sound, send them somewhere, sit them down or run a script. It does nothing until it is Armed and Gizmos live is on.",
+  "helps": "Greet a friend when they walk in, once, and only them.",
+  "where2d": "Atelier and BSA, right panel, Gizmos: Add trigger box.",
+  "whereVR": "Wrist menu > Objects > Gizmos > Trigger box",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the right panel and find Gizmos. Press Add trigger box.",
+      "Drag it to the doorway and stretch it to fill the doorway.",
+      "Set Players to Guests only, When to Someone enters, and How often to Once per visitor.",
+      "Add what it starts, for example Play beats Greeting.",
+      "Turn Armed on, then turn Gizmos live on."
+    ],
+    "vr": [
+      "Open the wrist menu and press Objects, then Gizmos, then Trigger box.",
+      "Put the box in the doorway and stretch it with the handles or with both hands.",
+      "Tap the box and set Players, When and How often. Add what it starts.",
+      "Press Test it to try it with nobody there.",
+      "Turn Armed on, then open Settings and turn Gizmos live on."
+    ],
+    "use": [
+      "a trigger does nothing until it is Armed and Gizmos live is on",
+      "a new or copied trigger is not Armed",
+      "once per visitor means each friend only once while they are in the room",
+      "Hide gizmos hides the box and it keeps working",
+      "Photo and video leave the box out",
+      "only the host's page runs triggers, and a friend cannot change them."
+    ]
+  },
+  "keywords": ["trigger", "box", "zone", "enter", "leave", "greeting", "armed", "gizmo", "doorway", "visitor", "guest"],
+  "related": ["lesson-gizmos", "sound-gizmo", "seat-gizmo", "beat-strip"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Props", "VR"],
+  "changes": [
+    {
+      "id": "trigger-box-2026-10-16",
+      "date": "2026-10-16",
+      "note": "A trigger box now starts things when a friend walks in, so place one from Objects, Gizmos, set Guests only and Once per visitor, then turn Armed on and Gizmos live on.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Gizmos live" },
+      "tiles": ["Trigger box"]
+    }
+  ]
+}

@@ -53,6 +53,7 @@
       <button id="hide" type="button">Hide gizmos</button>
       <button id="reset" type="button">New scene</button>
     </div>
+    <div class="row"><button id="addTrig" type="button">Add trigger box</button><button id="tplGreet" type="button">Greeting at the door</button><button id="armTrig" type="button">Arm all triggers</button></div>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -87,9 +88,11 @@
 <script src="gizmo_next_probe.js"></script>
 <script src="gizmo_next_beats.js"></script>
 <script src="gizmo_next_actions.js"></script>
+<script src="gizmo_next_trigger.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
 <script src="gizmo_next_actions_selftest.js"></script>
+<script src="gizmo_next_trigger_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -170,6 +173,15 @@
       var m = toPx(rec.x, rec.z); c.fillStyle = '#f3eee2'; c.font = '12px system-ui'; c.textAlign = 'center'; c.fillText(rec.name, m[0], m[1] + 4);
       var fa = toPx(rec.x - sn * hd, rec.z - cs * hd); c.beginPath(); c.arc(fa[0], fa[1], 3, 0, 7); c.fillStyle = '#ff8a5c'; c.fill(); /* the way the box faces: -z at yaw 0 */
     });
+    var TR = g.modules.trigger ? g.modules.trigger.list() : [];
+    TR.forEach(function (rec) {
+      var cs = Math.cos(rec.yaw), sn = Math.sin(rec.yaw), hw = rec.size[0] / 2, hd = rec.size[2] / 2;
+      var pts = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(function (l) { return toPx(rec.x + cs * l[0] + sn * l[1], rec.z - sn * l[0] + cs * l[1]); });
+      c.beginPath(); pts.forEach(function (p, k) { if (k) c.lineTo(p[0], p[1]); else c.moveTo(p[0], p[1]); }); c.closePath();
+      var hit = g.modules.trigger.visitors(rec.id).length > 0;
+      c.globalAlpha = hit ? 0.5 : 0.2; c.fillStyle = hit ? '#5ae0b4' : '#8c8cff'; c.fill(); c.globalAlpha = 1; c.lineWidth = 2; c.strokeStyle = rec.armed ? '#8c8cff' : '#5d5a80'; c.setLineDash(rec.armed ? [] : [4, 4]); c.stroke(); c.setLineDash([]);
+      var m = toPx(rec.x, rec.z); c.fillStyle = '#f3eee2'; c.font = '11px system-ui'; c.textAlign = 'center'; c.fillText(rec.name + (rec.armed ? '' : ' (not armed)'), m[0], m[1] + 4);
+    });
     var v = toPx(visitor.head[0], visitor.head[2]); c.beginPath(); c.arc(v[0], v[1], 9, 0, 7); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#ff8a5c'; c.stroke();
   }
 
@@ -226,6 +238,9 @@
   $('saveJson').addEventListener('click', function () { $('json').value = JSON.stringify(g.state(), null, 1); });
   $('loadJson').addEventListener('click', function () { try { g.load(JSON.parse($('json').value)); sel = null; paint(); } catch (e) { $('json').value = 'That is not valid JSON.'; } });
   g.mountPanel($('panel2d'));
+  $('addTrig').addEventListener('click', function () { var T3 = g.modules.trigger; var r = T3.add({ x: Math.round((Math.random() * 4 - 2) * 10) / 10, y: 1, z: Math.round((Math.random() * 4 - 2) * 10) / 10, name: 'Trigger ' + (T3.list().length + 1), starts: [{ do: 'sound', arg: 'bell', delay: 0 }] }); if (r) paint(); });
+  $('tplGreet').addEventListener('click', function () { var r = g.modules.trigger.template('greeting'); if (r) { g.modules.trigger.kind.set(r.id, { x: -1.5, y: 1, z: 1.5, size: [2, 2, 2] }); } });
+  $('armTrig').addEventListener('click', function () { g.modules.trigger.list().forEach(function (r) { g.modules.trigger.kind.set(r.id, { armed: true }); }); });
 
   /* the fake figures: sliders pose them, the Beat strip moves them */
   var sl3 = { wx0: ['s0', 0], wy0: ['s0', 1], wx1: ['s1', 0] };

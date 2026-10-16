@@ -86,6 +86,7 @@
       var ver = 0, idN = 0;
       var cache = { ver: -1, groups: null, events: null, hash: 0, hashVer: -1 };
       var gap = 1.0, speed = 1, mode = 'once', bracket = null;
+      var ranges = {}, rng = null;        /* named ranges (a trigger starts one), and the range being played now, which plays once whatever the loop mode */
       var st = 'stopped';                 /* 'stopped' | 'paused' | 'playing' */
       var tNow = 0, raw = 0;              /* the clock: mapped time, and seconds since the region start (unwrapped) */
       var started = null;                 /* the saved start state, taken the first time anything is applied */
@@ -288,8 +289,11 @@
       /* ---------- the clock ---------- */
       function length() { var m = 0; L.forEach(function (p) { var e = p.t + (p.hold || 0); if (e > m) m = e; }); return r3(m); }
       function region() {
+        if (rng) return [rng.a, rng.b];
         if (bracket) return [bracket.a, bracket.b];
         return [0, length()];
+      }
+      function curMode() { return rng ? 'once' : mode;
       }
       function setT(t) { tNow = r6(t); }
       function startRaw(from) { var lo = region()[0]; raw = Math.max(0, r6(from - lo)); }
@@ -304,19 +308,19 @@
         groups();
         var ev = cache.events; if (!ev.length) return;
         var r = region(), lo = r[0], hi = r[1], span = hi - lo; if (!(span > 0)) return;
-        var period = mode === 'yoyo' ? 2 * span : span;
+        var period = curMode() === 'yoyo' ? 2 * span : span;
         var j0 = Math.floor(prev / period), j1 = Math.floor(cur / period);
         if (j1 - j0 > 50) j0 = j1 - 50;
         var out = [];
         for (var j = j0; j <= j1; j++) for (var i = 0; i < ev.length; i++) {
           var p = ev[i]; if (p.t < lo - 1e-9 || p.t > hi + 1e-9) continue;
-          if (p.t >= hi - 1e-9 && mode !== 'once' && p.t > lo + 1e-9) continue;
+          if (p.t >= hi - 1e-9 && curMode() !== 'once' && p.t > lo + 1e-9) continue;
           var rr = j * period + (p.t - lo);
           if (rr > prev + 1e-9 && rr <= cur + 1e-9) out.push({ r: rr, o: i, p: p });
         }
         if (!out.length) return;
         out.sort(function (a, b) { return a.r - b.r || a.o - b.o; });
-        var pins = out.map(function (x) { return copy(x.p); }), info = { t: tNow, from: prev, to: cur, mode: mode };
+        var pins = out.map(function (x) { return copy(x.p); }), info = { t: tNow, from: prev, to: cur, mode: curMode() };
         passFns.slice().forEach(function (f) { try { f(pins, info); } catch (e) { g.log({ who: 'beats', what: 'A beat action stopped with an error' }); } });
       }
 
@@ -330,12 +334,12 @@
         }
         if (!(span > 0)) { st = 'paused'; return; }
         raw = raw + dt * speed; /* not rounded here: rounding every frame would drift; the mapped time is rounded to a microsecond instead */
-        setT(mapTime(raw, lo, hi, mode));
+        setT(mapTime(raw, lo, hi, curMode()));
         applyAt(tNow);
-        if (mode === 'once' && raw >= span - 1e-9) {
+        if (curMode() === 'once' && raw >= span - 1e-9) {
           raw = span; setT(hi); applyAt(tNow);
           crossEvents(prev, raw);
-          st = 'paused'; g.emit('beat-end', { t: tNow }); sendTransport(true); paintUI();
+          rng = null; st = 'paused'; g.emit('beat-end', { t: tNow }); sendTransport(true); paintUI();
           return;
         }
         crossEvents(prev, raw);
@@ -347,7 +351,7 @@
         if (hi - lo <= 0.001) { say('Add at least two beats first, then press Play.'); return false; }
         ensureStart();
         var from = isNum(fromT) ? fromT : tNow;
-        if (!isNum(fromT) && mode === 'once' && tNow >= hi - 1e-6) from = lo;
+        if (!isNum(fromT) && curMode() === 'once' && tNow >= hi - 1e-6) from = lo;
         from = clamp(from, lo, hi);
         startRaw(from); setT(from);
         st = 'playing';
@@ -360,7 +364,7 @@
       }
       function pauseNow() { if (st !== 'playing') return false; st = 'paused'; pauseFns.slice().forEach(function (f) { try { f(); } catch (e) { /* a listener must not stop the pause */ } }); sendTransport(true); paintUI(); return true; }
       function stopNow() {
-        var was = st; st = 'stopped'; raw = 0; setT(0);
+        var was = st; st = 'stopped'; rng = null; raw = 0; setT(0);
         restoreStart();
         stopFns.slice().forEach(function (f) { try { f({ was: was }); } catch (e) { /* a stopper must not stop the rest */ } });
         g.log({ who: 'beats', what: 'Stopped, figures put back' });
@@ -575,6 +579,26 @@
         if (!isNum(t)) return false;
         setT(r3(clamp(t, 0, MAX_T))); startRaw(clamp(tNow, region()[0], Math.max(region()[0], region()[1]))); paintUI(); return true;
       };
+      /* named ranges: a trigger (H3) plays one by name, once, from its start to its end */
+      api.setRange = function (name, a, b) {
+        if (needHost('save a beat range')) return false;
+        if (typeof name !== 'string' || !name.length || name.length > 40 || BAD[name] || !isNum(a) || !isNum(b)) return false;
+        a = r3(clamp(a, 0, MAX_T)); b = r3(clamp(b, 0, MAX_T));
+        if (b - a < 0.05) { say('A beat range needs a little room. Put the end after the start.'); return false; }
+        if (!ranges[name] && Object.keys(ranges).length >= 24) { say('That is as many named ranges as a scene holds.'); return false; }
+        ranges[name] = { a: a, b: b }; touch(); return true;
+      };
+      api.delRange = function (name) { if (needHost('delete a beat range')) return false; if (!ranges[name]) return false; delete ranges[name]; touch(); return true; };
+      api.getRange = function (name) { var r = ranges[name]; return r ? { name: name, a: r.a, b: r.b } : null; };
+      api.listRanges = function () { return Object.keys(ranges).sort().map(function (n) { return { name: n, a: ranges[n].a, b: ranges[n].b }; }); };
+      api.playRange = function (name) {
+        if (guest()) return false;
+        var r = ranges[name];
+        if (!r) { say('There is no beat range called ' + String(name).slice(0, 40) + ' yet.'); return false; }
+        rng = { a: r.a, b: r.b };
+        var ok = playNow(r.a); if (!ok) rng = null;
+        return ok;
+      };
       api.onStop = function (fn) { if (typeof fn === 'function') stopFns.push(fn); return api; };
       api.math = { smootherstep: smootherstep, mapTime: mapTime, blend: blend, same: same };
       api.icons = ICON;
@@ -623,6 +647,10 @@
         R('Bracket start here' + (bracket ? ' (now ' + fmt(bracket.a) + ' s)' : ''), 'left', function () { var e = bracket ? bracket.b : Math.max(length(), tNow + 1); if (api.setBracket(Math.min(tNow, e - 0.1), e)) done('Loop starts at ' + fmt(bracket.a) + ' seconds'); });
         R('Bracket end here' + (bracket ? ' (now ' + fmt(bracket.b) + ' s)' : ''), 'right', function () { var s0 = bracket ? bracket.a : 0; if (api.setBracket(s0, Math.max(tNow, s0 + 0.1))) done('Loop ends at ' + fmt(bracket.b) + ' seconds'); });
         if (bracket) R('Clear the bracket', 'trash', function () { api.clearBracket(); done('Bracket cleared'); });
+        ['Greeting', 'Intro', 'Outro'].forEach(function (nm) {
+          var have = ranges[nm];
+          R('Save range: ' + nm + (have ? ' (now ' + fmt(have.a) + ' to ' + fmt(have.b) + ' s)' : ''), 'plus', function () { var rr = region(); if (api.setRange(nm, rr[0], rr[1])) done('Saved the range ' + nm + ', ' + fmt(rr[0]) + ' to ' + fmt(rr[1]) + ' seconds'); });
+        });
         if (selected && byId(selected)) {
           var sp = byId(selected);
           R('Play from here', 'play', function () { playNow(sp.t); h.redraw(); });
@@ -678,14 +706,15 @@
       };
 
       /* ---------- save, load, reset: a load applies nothing and starts nothing ---------- */
-      function quiet() { st = 'stopped'; raw = 0; tNow = 0; started = null; last = {}; selected = null; }
+      function quiet() { st = 'stopped'; rng = null; raw = 0; tNow = 0; started = null; last = {}; selected = null; }
       api.state = function () {
-        if (!L.length && gap === 1 && mode === 'once' && speed === 1 && !bracket) return null;
-        return { v: 1, pins: L.map(copy), mode: mode, gap: gap, speed: speed, bracket: bracket ? { a: bracket.a, b: bracket.b } : null };
+        if (!L.length && gap === 1 && mode === 'once' && speed === 1 && !bracket && !Object.keys(ranges).length) return null;
+        return { v: 1, pins: L.map(copy), mode: mode, gap: gap, speed: speed, bracket: bracket ? { a: bracket.a, b: bracket.b } : null, ranges: api.listRanges() };
       };
       api.load = function (s) {
-        quiet(); L = []; mode = 'once'; gap = 1; speed = 1; bracket = null;
+        quiet(); L = []; mode = 'once'; gap = 1; speed = 1; bracket = null; ranges = {};
         if (isObj(s)) {
+          if (Array.isArray(s.ranges)) s.ranges.slice(0, 24).forEach(function (r) { if (isObj(r) && typeof r.name === 'string' && r.name.length && r.name.length <= 40 && !BAD[r.name] && isNum(r.a) && isNum(r.b) && r.b - r.a >= 0.05) ranges[r.name] = { a: r3(clamp(r.a, 0, MAX_T)), b: r3(clamp(r.b, 0, MAX_T)) }; });
           var taken = {};
           if (Array.isArray(s.pins)) s.pins.slice(0, MAX_PINS).forEach(function (r) { var p = cleanPin(r, taken); if (p) L.push(p); });
           if (MODES.indexOf(s.mode) >= 0) mode = s.mode;
@@ -698,7 +727,7 @@
         }
         ver++; g.emit('beat-change', { n: L.length }); paintUI();
       };
-      api.reset = function () { quiet(); L = []; mode = 'once'; gap = 1; speed = 1; bracket = null; ver++; g.emit('beat-change', { n: 0 }); paintUI(); };
+      api.reset = function () { quiet(); L = []; mode = 'once'; gap = 1; speed = 1; bracket = null; ranges = {}; ver++; g.emit('beat-change', { n: 0 }); paintUI(); };
 
       /* ---------- friends: the host's transport, the same pure function of time ---------- */
       function hash() {
