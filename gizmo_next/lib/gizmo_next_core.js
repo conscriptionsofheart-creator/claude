@@ -23,7 +23,8 @@
   function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
   function cut(s, n) { s = String(s); return s.length > n ? s.slice(0, n) : s; }
   /* the one place that guards her copy: no em dash or en dash ever reaches a toast or a row */
-  function plain(s) { return String(s).replace(/\s*[\u2014\u2013]\s*/g, ', '); }
+  var DASHES = new RegExp(' *[' + String.fromCharCode(0x2014, 0x2013) + '] *', 'g'); /* built from char codes so this file holds no dash character at all */
+  function plain(s) { return String(s).replace(DASHES, ', '); }
   function wrapYaw(n) { if (!isNum(n) || Math.abs(n) > 1e4) return 0; var t = 2 * Math.PI; n = n % t; if (n > Math.PI) n -= t; else if (n < -Math.PI) n += t; return n; }
   function r4(v) { return Math.round(v * 10000) / 10000; }
   function fmt(v) { return String(Math.round(v * 100) / 100); }
