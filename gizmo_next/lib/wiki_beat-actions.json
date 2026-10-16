@@ -1,0 +1,52 @@
+{
+  "id": "beat-actions",
+  "name": "Beat actions",
+  "area": "Animate",
+  "group": "BSA",
+  "summary": "A beat can do more than move a figure. It can play a recording you made, change only the shader, clothes, eyes or skin, and start or stop a sound. A voice beat waits for its recording to finish.",
+  "helps": "Make a figure say hello and change its shader while it waves, all on the same strip, without anything flashing.",
+  "where2d": "Animate panel: Beat actions, under Beat strip.",
+  "whereVR": "Capture face > Animate > Beat strip, then the voice and shader rows",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Record a line for a figure in Narration.",
+      "Open the Animate panel and put the clock where you want the voice to start.",
+      "Press Add voice beat. The hold is the length of the recording.",
+      "Press Add shader beat to add a change of shader at the clock.",
+      "Press Play and watch and listen. Press Stop to put everything back."
+    ],
+    "vr": [
+      "Record a line for a figure in Narration.",
+      "Open the wrist menu, then Capture face, Animate, Beat strip.",
+      "Press Add voice and pick your recording. Press Add shader beat.",
+      "Press Play. Press Stop to put everything back."
+    ],
+    "use": [
+      "a voice beat holds for the length of its recording, so the next beat waits",
+      "a shader beat leaves the clothes and the rest of the look alone",
+      "a clothes piece that is not cleared is left out with a message",
+      "looks change no faster than every 0.4 seconds, so nothing flashes",
+      "Stop and Pause stop the voice and any sound",
+      "a friend sees the looks and poses and does not start your voice or sounds."
+    ]
+  },
+  "keywords": ["beat", "voice", "recording", "shader", "clothes", "eyes", "skin", "face", "sound", "hold", "flash", "animate"],
+  "related": ["beat-strip", "keyframes", "saved-looks", "narration"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Animate", "VR"],
+  "changes": [
+    {
+      "id": "beat-actions-2026-10-16",
+      "date": "2026-10-16",
+      "note": "Beats can now play a recording and change just the shader, clothes or eyes, so record a line, press Add voice beat, then Add shader beat, and press Play.",
+      "app": "both",
+      "target": { "where": "animate", "label": "Beat strip" },
+      "tiles": ["Beat strip"]
+    }
+  ]
+}

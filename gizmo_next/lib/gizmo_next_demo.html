@@ -86,8 +86,10 @@
 <script src="gizmo_next_testkit.js"></script>
 <script src="gizmo_next_probe.js"></script>
 <script src="gizmo_next_beats.js"></script>
+<script src="gizmo_next_actions.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
+<script src="gizmo_next_actions_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -109,6 +111,16 @@
   ctx.look = { get: function (s) { return figs[s] ? cp(figs[s].look) : null; }, apply: function (s, p) { if (figs[s]) figs[s].look = cp(p); } };
   ctx._figures = [{ slot: 's0' }, { slot: 's1' }];
   ctx.songTime = function () { return songOn ? songT : null; };
+  /* fake voice and sound for the beat actions (H2): a recording plays for its length, and the mouth value follows it */
+  var voiceUntil = 0, voiceLog = 'Voice: quiet', cleared = ['shirt', 'hat', 'scarf'];
+  ctx.look.allowedClothes = function () { return cleared; };
+  ctx.narration = {
+    voLines: function () { return [{ rec: 'hello_friend', seconds: 1.5 }, { rec: 'see_you_soon', seconds: 0.8 }]; },
+    play: function (s, r) { voiceUntil = performance.now() + (r === 'hello_friend' ? 1500 : 800); voiceLog = 'Voice: ' + r; },
+    stop: function () { voiceUntil = 0; voiceLog = 'Voice: stopped'; },
+    mouth: function () { return performance.now() < voiceUntil ? 0.4 : 0; }
+  };
+  ctx.sounds = { playMode: function (id, m) { voiceLog = 'Sound ' + id + ': ' + m; } };
   ctx.selectedSlots = function () { return ['s0', 's1']; };
   var g = GN.create(ctx);
 
@@ -236,7 +248,7 @@
       fc.fillStyle = '#a89fbd'; fc.font = '11px system-ui'; fc.textAlign = 'center'; fc.fillText('Figure ' + (i + 1), cx, 186);
     });
     var B = g.modules.beats;
-    if (B) { fc.fillStyle = '#f3eee2'; fc.textAlign = 'left'; fc.font = '12px system-ui'; fc.fillText('Beats: ' + B.list().length + '   clock ' + B.clock.t.toFixed(2) + ' s   ' + B.clock.state + '   ' + B.clock.mode, 8, 16); }
+    if (B) { fc.fillStyle = '#f3eee2'; fc.textAlign = 'left'; fc.font = '12px system-ui'; fc.fillText((window.__demo && window.__demo.mouth ? 'mouth ' + window.__demo.mouth().toFixed(2) + '   ' : '') + voiceLog + '   Beats: ' + B.list().length + '   clock ' + B.clock.t.toFixed(2) + ' s   ' + B.clock.state + '   ' + B.clock.mode, 8, 16); }
   }
 
   /* the selftests, in this page */
@@ -257,7 +269,7 @@
   sel = K().list[0].id; paint();
   var painter = setInterval(paintList, 500);
   requestAnimationFrame(frame);
-  window.__demo = { g: g, ctx: ctx, visitor: visitor, K: K, paint: paint, figs: figs, beats: g.modules.beats };
+  window.__demo = { mouth: function () { return ctx.narration.mouth(); }, g: g, ctx: ctx, visitor: visitor, K: K, paint: paint, figs: figs, beats: g.modules.beats };
 })();
 </script>
 </body>

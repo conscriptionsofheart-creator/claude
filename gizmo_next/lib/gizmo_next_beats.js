@@ -93,7 +93,7 @@
       var selected = null, ui = [], uiAcc = 0, syncAcc = 0, lastWarn = 0, pendingSend = 0;
       var passFns = [], stopFns = [], pauseFns = [];
       var api = {};
-      api.hooks = { pin: {}, list: [] }; /* later stages: pin[kind](pin) returns the cleaned pin or null; list[i](pins) returns a new list. Both must be pure. */
+      api.hooks = { pin: {}, list: [], rows: [] }; /* later stages: pin[kind](pin) returns the cleaned pin or null; list[i](pins) returns a new list. Both must be pure. */
 
       var guest = function () { return g.isGuest(); };
       var hostObj = function (n) { var o = g.ctx && g.ctx[n]; return o && typeof o === 'object' ? o : null; };
@@ -630,6 +630,9 @@
           R('Move later by 0.1 s', 'right', function () { api.retimeBeat(selected, sp.t + 0.1); h.redraw(); });
           R('Delete this beat', 'trash', function () { g.pushUndo(); api.removeBeat(selected); done('Beat deleted'); });
         }
+        api.hooks.rows.forEach(function (fn) {
+          try { var ex = fn(h); if (Array.isArray(ex)) ex.forEach(function (r) { if (r && r.label != null) R(r.label, r.ic || null, r.act || noop, r.on); }); } catch (e) { /* a stage's rows must not break the strip */ }
+        });
         cards.slice(0, MAX_CARDS).forEach(function (c, i) {
           R(cardLabel(c, i), c.icons[0] || null, function () { selected = c.id; scrubNow(c.t); h.redraw(); }, function () { return c.selected; });
         });
