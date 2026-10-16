@@ -1,0 +1,50 @@
+{
+  "id": "effects-gizmo",
+  "name": "Effects gizmo (particles and trail)",
+  "area": "Props",
+  "group": "BSA",
+  "summary": "Put smoke, sparks, confetti or a splash anywhere, or hang a glowing trail on a hand or a prop. Play it once, loop it, or stop it, and a beat can start it too.",
+  "helps": "Add a burst of confetti at a reveal, sparks on a hit, or a comet trail on a wand, gently and without flashing.",
+  "where2d": "Atelier and BSA, right panel, Gizmos: Effects.",
+  "whereVR": "Wrist menu > Objects > Gizmos > Effects",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the right panel, find Gizmos, and press Add next to Effects.",
+      "Press Preset until it says Confetti, then press Play once.",
+      "Press Loop to keep it going, and Stop to clear it.",
+      "Press the Tab row to switch to Trail, then Follow to pick a hand or a prop."
+    ],
+    "vr": [
+      "Open the wrist menu and press Objects, then Gizmos, then Effects. Put it down.",
+      "Turn Gizmos live on, then tap the effect and press Play once or Loop.",
+      "Press Stop to clear it."
+    ],
+    "use": [
+      "nothing plays when a scene opens or while Gizmos live is off",
+      "Stop clears everything at once",
+      "everything fades slowly and the colours glide, so it never flashes",
+      "there is a limit of 600 particles across all your effects",
+      "a beat can start or stop an effect",
+      "hiding gizmos hides the box and the effect keeps playing."
+    ]
+  },
+  "keywords": ["effects", "particles", "trail", "smoke", "sparks", "confetti", "splash", "loop", "stop", "comet"],
+  "related": ["body-effects", "atl-effects", "sound-gizmo", "beat-actions"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Props", "VR"],
+  "changes": [
+    {
+      "id": "effects-gizmo-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now add an Effects gizmo that plays smoke, sparks, confetti or a trail, so add one from Gizmos, choose a preset, then press Play once, Loop or Stop.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Gizmos live" },
+      "tiles": ["Effects"]
+    }
+  ]
+}

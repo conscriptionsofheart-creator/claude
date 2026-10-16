@@ -15,3 +15,5 @@ H5: none. Spawn points generate no assets. Everything is code and test data made
 H6: none. The seat sidecar generates no assets. Everything is code and test data made in code. No restricted-source data is used or referenced.
 
 H7: none. The walk model generates no assets. Everything is code and test data made in code. No restricted-source data is used or referenced.
+
+H8: none. The effects gizmo generates no assets (particles and the trail ribbon are drawn from code; the comet_trail shader is not used). Everything is code and test data made in code. No restricted-source data is used or referenced.

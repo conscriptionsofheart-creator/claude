@@ -258,7 +258,15 @@
   class Group extends Object3D { constructor() { super(); this.type = 'Group'; this.isGroup = true; } }
   class Scene extends Object3D { constructor() { super(); this.type = 'Scene'; this.isScene = true; } }
 
-  class BufferGeometry { constructor() { this.type = 'BufferGeometry'; this.parameters = {}; this.disposed = false; } dispose() { this.disposed = true; } }
+  class BufferAttribute { constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.count = array ? Math.floor(array.length / itemSize) : 0; this.needsUpdate = false; this.isBufferAttribute = true; } }
+  class BufferGeometry {
+    constructor() { this.type = 'BufferGeometry'; this.parameters = {}; this.disposed = false; this.attributes = {}; this.index = null; this.drawRange = { start: 0, count: Infinity }; }
+    setAttribute(n, a) { this.attributes[n] = a; return this; }
+    getAttribute(n) { return this.attributes[n]; }
+    setIndex(a) { this.index = a; return this; }
+    setDrawRange(s, c) { this.drawRange = { start: s, count: c }; }
+    dispose() { this.disposed = true; }
+  }
   function geo(type, names) {
     return class extends BufferGeometry {
       constructor() {
@@ -354,7 +362,7 @@
     REVISION: '128stub', __stub: true, DoubleSide: 2, FrontSide: 0, BackSide: 1, RepeatWrapping: 1000,
     Vector2: Vector2, Vector3: Vector3, Euler: Euler, Quaternion: Quaternion, Matrix4: Matrix4, Color: Color,
     Object3D: Object3D, Group: Group, Scene: Scene, Mesh: Mesh, LineSegments: LineSegments, Points: Points, Sprite: Sprite,
-    BufferGeometry: BufferGeometry, BoxGeometry: BoxGeometry, SphereGeometry: SphereGeometry, CircleGeometry: CircleGeometry, ConeGeometry: ConeGeometry,
+    BufferGeometry: BufferGeometry, BufferAttribute: BufferAttribute, AdditiveBlending: 2, BoxGeometry: BoxGeometry, SphereGeometry: SphereGeometry, CircleGeometry: CircleGeometry, ConeGeometry: ConeGeometry,
     CylinderGeometry: CylinderGeometry, TorusGeometry: TorusGeometry, RingGeometry: RingGeometry, PlaneGeometry: PlaneGeometry, EdgesGeometry: EdgesGeometry,
     Material: Material, MeshBasicMaterial: MeshBasicMaterial, MeshStandardMaterial: MeshStandardMaterial, LineBasicMaterial: LineBasicMaterial,
     PointsMaterial: PointsMaterial, SpriteMaterial: SpriteMaterial, Texture: Texture, CanvasTexture: CanvasTexture, Raycaster: Raycaster

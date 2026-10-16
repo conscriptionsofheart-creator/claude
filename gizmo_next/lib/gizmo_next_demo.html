@@ -58,6 +58,7 @@
     <div class="row"><button id="addSpawn" type="button">Add spawn point</button><button id="guestJoins" type="button">Guest joins</button><button id="testArrive" type="button">Test arrive</button></div>
     <div class="row"><button id="addSeat" type="button">Add seat</button><button id="walkSeat" type="button">Walk to the seat</button><button id="sitBtn" type="button">Sit</button><button id="standBtn" type="button">Stand</button></div>
     <div class="row"><button id="wkWalk" type="button">Walk 1 s</button><button id="wkRun" type="button">Run 1 s</button><button id="wkJump" type="button">Jump</button><button id="wkFly" type="button">Fly up 1 s</button><button id="wkSpeed" type="button">Speed: 4</button></div>
+    <div class="row"><button id="addFx" type="button">Add effects gizmo</button><button id="fxOnce" type="button">Play once</button><button id="fxLoop" type="button">Loop</button><button id="fxStop" type="button">Stop</button><button id="fxPreset" type="button">Preset: sparks</button><button id="fxColour" type="button">Colour: gold</button></div>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -97,6 +98,7 @@
 <script src="gizmo_next_spawn.js"></script>
 <script src="gizmo_next_seat.js"></script>
 <script src="gizmo_next_walk.js"></script>
+<script src="gizmo_next_effects.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
 <script src="gizmo_next_actions_selftest.js"></script>
@@ -105,6 +107,7 @@
 <script src="gizmo_next_spawn_selftest.js"></script>
 <script src="gizmo_next_seat_selftest.js"></script>
 <script src="gizmo_next_walk_selftest.js"></script>
+<script src="gizmo_next_effects_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -215,6 +218,7 @@
     SPAWN.list.forEach(function (m) { var p = toPx(m.x, m.z), a = toPx(m.x - Math.sin(m.yaw) * 0.6, m.z - Math.cos(m.yaw) * 0.6); c.strokeStyle = '#5ae0b4'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], 12, 0, 7); c.stroke(); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(a[0], a[1]); c.stroke(); c.fillStyle = '#5ae0b4'; c.font = '11px system-ui'; c.textAlign = 'center'; c.fillText(m.name, p[0], p[1] + 26); });
     var hp = toPx(ctx._head[0], ctx._head[2]); c.strokeStyle = '#f3eee2'; c.lineWidth = 1; c.beginPath(); c.arc(hp[0], hp[1], 5, 0, 7); c.stroke();
     SEATS.list.forEach(function (m) { var p = toPx(m.x, m.z); c.strokeStyle = '#b48cff'; c.lineWidth = 2; c.strokeRect(p[0] - 8, p[1] - 8, 16, 16); c.fillStyle = '#b48cff'; c.font = '11px system-ui'; c.textAlign = 'center'; c.fillText(m.name + (g.modules.seat.occupant(m.id) ? ' (taken)' : ''), p[0], p[1] + 22); });
+    g.modules.effects.list().forEach(function (r) { var fp = toPx(r.x, r.z); c.strokeStyle = '#e86cd2'; c.lineWidth = 2; c.strokeRect(fp[0] - 6, fp[1] - 6, 12, 12); var sh = g.modules.effects.shownColors(r.id), col = sh ? sh.start.map(function (v) { return Math.round(v * 255); }) : [255, 209, 102]; g.modules.effects.points(r.id).forEach(function (q) { var pp = toPx(q[0], q[2]); c.globalAlpha = Math.max(0.05, q[3]); c.fillStyle = 'rgb(' + col.join(',') + ')'; c.fillRect(pp[0] - 1.5, pp[1] - 1.5 - q[1] * 6, 3, 3); }); c.globalAlpha = 1; });
     var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) { var tp = toPx(pp.anchor[0], pp.anchor[2]); c.fillStyle = '#b48cff'; c.fillRect(tp[0] - 14, tp[1] - 30, 28, 16); c.fillStyle = '#15111d'; c.fillText('Sit', tp[0], tp[1] - 18); }
     var v = toPx(visitor.head[0], visitor.head[2]); c.beginPath(); c.arc(v[0], v[1], 9, 0, 7); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#ff8a5c'; c.stroke();
   }
@@ -283,6 +287,15 @@
   $('walkSeat').addEventListener('click', function () { var m = SEATS.list[0]; if (m) ctx._head = [m.x, 1.58, m.z + 0.6]; });
   $('sitBtn').addEventListener('click', function () { var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) g.modules.seat.sit(pp.seatId); else voiceLog = 'No Sit tile here: go within 0.8 m and face the seat'; });
   $('standBtn').addEventListener('click', function () { g.modules.seat.stand(); });
+  /* H8: effects gizmos drawn as dots on the map; nothing plays until Gizmos live is on */
+  var FXPRE = ['sparks', 'smoke', 'confetti', 'splash'], FXCOL = [['gold', '#ffd166'], ['cyan', '#5ae0ff'], ['pink', '#e86cd2'], ['white', '#ffffff']], fxSel = null;
+  function fxRec() { var E8 = g.modules.effects, l = E8.list(); return fxSel && E8.get(fxSel) ? E8.get(fxSel) : (l.length ? l[l.length - 1] : null); }
+  $('addFx').addEventListener('click', function () { var E8 = g.modules.effects, n = E8.list().length, r = E8.add({ x: [-2, 2, -2, 2][n % 4], y: 0.5, z: [3, 3, -3, -3][n % 4], preset: 'sparks' }); if (r) fxSel = r.id; });
+  $('fxOnce').addEventListener('click', function () { var r = fxRec(); if (r) g.modules.effects.play(r.id, 'once'); });
+  $('fxLoop').addEventListener('click', function () { var r = fxRec(); if (r) g.modules.effects.play(r.id, 'loop'); });
+  $('fxStop').addEventListener('click', function () { var r = fxRec(); if (r) g.modules.effects.stop(r.id); });
+  $('fxPreset').addEventListener('click', function () { var r = fxRec(); if (!r) return; var n = FXPRE[(FXPRE.indexOf(r.preset) + 1) % FXPRE.length]; g.modules.effects.setFields(r.id, { preset: n }); $('fxPreset').textContent = 'Preset: ' + n; });
+  $('fxColour').addEventListener('click', function () { var r = fxRec(); if (!r) return; var i = FXCOL.findIndex(function (c) { return c[1] === r.startColor; }), n = FXCOL[(i + 1) % FXCOL.length]; g.modules.effects.setFields(r.id, { startColor: n[1] }); $('fxColour').textContent = 'Colour: ' + n[0]; });
   /* H7: the walk model run from buttons, a line of numbers in the voice log; Speed cycles the scene's Player Speed */
   var wkState = null;
   function wkGo(inp, sec, label) { var W7 = g.modules.walk; wkState = wkState || GN.WalkModel.init([ctx._head[0], 0, ctx._head[2]]); var peak = 0; for (var i = 0; i < Math.round(sec * 60); i++) { wkState = W7.stepNow(wkState, inp, 1 / 60, { floorAt: function () { return 0; } }); peak = Math.max(peak, wkState.pos[1]); } ctx._head = [wkState.pos[0], 1.6 + wkState.pos[1] - 0, wkState.pos[2]]; voiceLog = label + ': speed ' + wkState.speed.toFixed(1) + ' m/s, height ' + wkState.pos[1].toFixed(2) + ' m, edge vignette ' + wkState.vignette.toFixed(2); }
