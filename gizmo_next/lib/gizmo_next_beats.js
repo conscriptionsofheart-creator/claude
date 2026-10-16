@@ -91,14 +91,15 @@
       var started = null;                 /* the saved start state, taken the first time anything is applied */
       var last = {};                      /* last applied text for each slot and channel, so a still figure is not poked every frame */
       var selected = null, ui = [], uiAcc = 0, syncAcc = 0, lastWarn = 0, pendingSend = 0;
-      var passFns = [], stopFns = [];
+      var passFns = [], stopFns = [], pauseFns = [];
       var api = {};
+      api.hooks = { pin: {}, list: [] }; /* later stages: pin[kind](pin) returns the cleaned pin or null; list[i](pins) returns a new list. Both must be pure. */
 
       var guest = function () { return g.isGuest(); };
       var hostObj = function (n) { var o = g.ctx && g.ctx[n]; return o && typeof o === 'object' ? o : null; };
       var songT = function () { var v = g.call('songTime', null); return isNum(v) && v >= 0 ? v : null; };
       var say = function (t) { return g.say(t); };
-      var touch = function () { ver++; if (!g._loading) g.persist(); g.emit('beat-change', { n: L.length }); paintUI(); };
+      var touch = function () { applyListHooks(); ver++; if (!g._loading) g.persist(); g.emit('beat-change', { n: L.length }); paintUI(); };
 
       /* ---------- cleaning ---------- */
       function cleanSlot(s) {
@@ -129,6 +130,8 @@
         if (!id) { do { idN++; id = 'b' + idN; } while (taken && taken[id]); }
         if (taken) taken[id] = 1;
         p.id = id;
+        var hk = api.hooks.pin[kind];
+        if (hk) { try { p = hk(p); } catch (e) { p = null; } if (!p || typeof p !== 'object') return null; }
         var size; try { size = JSON.stringify(p).length; } catch (e) { return null; }
         return size > MAX_PIN_CHARS ? null : p;
       }
@@ -153,6 +156,14 @@
         if (moved) sortList();
         return moved;
       }
+      function applyListHooks() {
+        api.hooks.list.forEach(function (fn) {
+          try {
+            var r = fn(L.map(copy));
+            if (Array.isArray(r)) { var taken = {}, next = []; r.slice(0, MAX_PINS).forEach(function (x) { var q = cleanPin(x, taken); if (q) next.push(q); }); L = next; sortList(); }
+          } catch (e) { /* a hook must not break the list */ }
+        });
+      }
       var LOOK_MSG = 'Look changes are kept 0.4 seconds apart, so nothing flashes.';
 
       /* ---------- groups and the pure sampler ---------- */
@@ -161,6 +172,15 @@
         var G = {}, order = [], ev = [];
         L.forEach(function (p) {
           if (!SAMPLED[p.kind]) { ev.push(p); return; }
+          if (p.kind === 'look') {
+            /* each part of a look (shader, clothes, eyes, skin ...) is its own timeline, so a beat that carries one part never touches the others */
+            Object.keys(p.look).forEach(function (part) {
+              var pk2 = String(p.slot) + '|look|' + part;
+              if (!G[pk2]) { G[pk2] = { slot: p.slot, kind: 'look', part: part, pins: [] }; order.push(pk2); }
+              G[pk2].pins.push({ t: p.t, hold: p.hold, kind: 'look', look: p.look[part] });
+            });
+            return;
+          }
           var key = String(p.slot) + '|' + p.kind;
           if (!G[key]) { G[key] = { slot: p.slot, kind: p.kind, pins: [] }; order.push(key); }
           G[key].pins.push(p);
@@ -194,7 +214,10 @@
         var out = {}, G = groups();
         for (var i = 0; i < G.length; i++) {
           var grp = G[i], s = String(grp.slot);
-          (out[s] = out[s] || {})[grp.kind] = sample(grp, t);
+          if (grp.kind === 'look') {
+            if (t < grp.pins[0].t - 1e-9) continue; /* before a part's first beat it is left alone */
+            var o1 = out[s] = out[s] || {}; (o1.look = o1.look || {})[grp.part] = sample(grp, t);
+          } else (out[s] = out[s] || {})[grp.kind] = sample(grp, t);
         }
         return out;
       }
@@ -238,7 +261,9 @@
       function ensureStart() {
         if (started) return;
         started = [];
+        var seen = {};
         groups().forEach(function (grp) {
+          var sk = String(grp.slot) + '|' + grp.kind; if (seen[sk]) return; seen[sk] = 1;
           var v = readChannel(grp.kind, grp.slot); if (v !== null) started.push({ slot: grp.slot, kind: grp.kind, val: v });
         });
       }
@@ -261,7 +286,7 @@
       }
 
       /* ---------- the clock ---------- */
-      function length() { var m = 0; L.forEach(function (p) { var e = p.t + (SAMPLED[p.kind] ? (p.hold || 0) : 0); if (e > m) m = e; }); return r3(m); }
+      function length() { var m = 0; L.forEach(function (p) { var e = p.t + (p.hold || 0); if (e > m) m = e; }); return r3(m); }
       function region() {
         if (bracket) return [bracket.a, bracket.b];
         return [0, length()];
@@ -333,7 +358,7 @@
         sendTransport(true); paintUI();
         return true;
       }
-      function pauseNow() { if (st !== 'playing') return false; st = 'paused'; sendTransport(true); paintUI(); return true; }
+      function pauseNow() { if (st !== 'playing') return false; st = 'paused'; pauseFns.slice().forEach(function (f) { try { f(); } catch (e) { /* a listener must not stop the pause */ } }); sendTransport(true); paintUI(); return true; }
       function stopNow() {
         var was = st; st = 'stopped'; raw = 0; setT(0);
         restoreStart();
@@ -544,6 +569,12 @@
       api.stateAt = stateAt;
       api.applyAt = function (t) { return applyAt(isNum(t) ? t : tNow); };
       api.onPass = function (fn) { if (typeof fn === 'function') passFns.push(fn); return api; };
+      api.onPause = function (fn) { if (typeof fn === 'function') pauseFns.push(fn); return api; };
+      api.setClock = function (t) {
+        if (needHost('move the clock')) return false;
+        if (!isNum(t)) return false;
+        setT(r3(clamp(t, 0, MAX_T))); startRaw(clamp(tNow, region()[0], Math.max(region()[0], region()[1]))); paintUI(); return true;
+      };
       api.onStop = function (fn) { if (typeof fn === 'function') stopFns.push(fn); return api; };
       api.math = { smootherstep: smootherstep, mapTime: mapTime, blend: blend, same: same };
       api.icons = ICON;
@@ -660,6 +691,7 @@
           if (isObj(s.bracket) && isNum(s.bracket.a) && isNum(s.bracket.b) && s.bracket.b - s.bracket.a >= 0.05) bracket = { a: r3(clamp(s.bracket.a, 0, MAX_T)), b: r3(clamp(s.bracket.b, 0, MAX_T)) };
           sortList();
           if (enforceLook()) g.log({ who: 'beats', what: 'Some look changes were spread out so nothing flashes' });
+          applyListHooks();
         }
         ver++; g.emit('beat-change', { n: L.length }); paintUI();
       };
@@ -708,7 +740,7 @@
           if (!guest() && !g.isPrivate()) { syncAcc += dt; if (syncAcc >= 2) { syncAcc = 0; sendTransport(false); } }
         }
       };
-      api.dispose = function () { ui = []; passFns = []; stopFns = []; };
+      api.dispose = function () { ui = []; passFns = []; stopFns = []; pauseFns = []; };
       return api;
     });
   }
