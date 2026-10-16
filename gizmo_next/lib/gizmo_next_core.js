@@ -117,7 +117,7 @@
   /* ---------- the global ---------- */
   var REG = [], INST = [], ATTACHED = {}, LOADED = {}, PENDING_FILES = 0;
   var GN = {
-    _isGN: true, inst: null, PARTS: [], icons: {},
+    _isGN: true, inst: null, PARTS: ['gizmo_next_beats.js'], icons: {},
     get version() { return '0.' + (1 + REG.length); },
     get ready() { return !!(GN.inst && GN.inst._installed && PENDING_FILES <= 0); },
     safe: safe, plain: plain, _instances: INST, _registry: REG

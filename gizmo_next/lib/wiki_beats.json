@@ -1,0 +1,53 @@
+{
+  "id": "beat-strip",
+  "name": "Beat strip",
+  "area": "Animate",
+  "group": "BSA",
+  "summary": "A beat is a moment in your scene. Pose a figure, press Add beat, and the scene clock moves on one second. Play runs the beats, smoothly, with Once, Loop or Yoyo.",
+  "helps": "Make a figure move without a song: hand up, hand right, hand left, then play it back, scrub through it and set it to loop.",
+  "where2d": "Animate panel: Beat strip.",
+  "whereVR": "Capture face > Animate > Beat strip",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Select a figure and pose it with its hand up.",
+      "Open the Animate panel and press Add beat. The clock moves on by one second.",
+      "Move the hand to the right and press Add beat. Move it to the left and press Add beat.",
+      "Press Play to watch it. Drag the slider to scrub. Press Stop to put the figure back.",
+      "Press the mode button to choose Once, Loop or Yoyo."
+    ],
+    "vr": [
+      "Select a figure and pose it with its hand up.",
+      "Open the wrist menu, then Capture face, Animate, Beat strip.",
+      "Press Add beat. Move the hand right and press Add beat. Move it left and press Add beat.",
+      "Press Play. Tap a card to jump to that beat. Press Stop to put the figure back.",
+      "Press Loop mode to choose Once, Loop or Yoyo."
+    ],
+    "use": [
+      "an unchanged pose is not added",
+      "the clock moves on by the gap after each beat, one second to start with",
+      "a look change takes at least 0.4 seconds, so nothing flashes",
+      "with a song playing, the beats follow the song's time",
+      "old keyframes turn into beats and stay as they were",
+      "a friend watches what the host plays and cannot change the beats."
+    ]
+  },
+  "keywords": ["beat", "beats", "animate", "timeline", "clock", "play", "loop", "yoyo", "scrub", "pose", "strip", "keyframes"],
+  "related": ["keyframes", "saved-looks", "clip-play", "lesson-scene_time"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Animate", "VR"],
+  "changes": [
+    {
+      "id": "beat-strip-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now make a figure move without a song, so pose it, press Add beat, move it, press Add beat again, then Play, and use Loop mode to choose Once, Loop or Yoyo.",
+      "app": "both",
+      "target": { "where": "animate", "label": "Beat strip" },
+      "tiles": ["Beat strip"]
+    }
+  ]
+}

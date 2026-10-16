@@ -32,6 +32,8 @@
       props: () => G(() => (window.propInstances || []).map(p => ({ id: p.id, name: p.name, object: p.obj, tags: p.tags || [] })), []), /* BSA; the Atelier uses Props.list with p.wrap */
       look: null,                                                           /* SEAT: {get(slot), apply(slot,parts,k)} through kit_looks.js bodyLook/applyLook (stage H1) */
       pose: null,                                                           /* SEAT: {get(slot), apply(slot,pose,k)} snapshotObj-style (stage H1) */
+      songTime: () => G(() => { const t = window._songT && window._songT(); return typeof t === 'number' && isFinite(t) && t >= 0 && window.__songPlaying ? t : null; }, null), /* H1, SEAT: the song's time while a song plays, else null. _songT() is in couple3d.html; name the "song is playing" test the page really has */
+      selectedSlots: () => G(() => (window.selectedBodySlots ? window.selectedBodySlots() : null), null), /* H1, SEAT: the slots of the selected figures, or null for all figures */
       pins: window.CastPins || null,                                        /* CastPins in couple3d.html */
       narration: window.Narration || null,                                  /* narration.js: needs the adapter {voLines, play, mouth} (stage H2) */
       sounds: window.Sounds || null,                                        /* atelier_sounds.js */

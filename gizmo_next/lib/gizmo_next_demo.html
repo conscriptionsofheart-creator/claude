@@ -53,6 +53,13 @@
       <button id="hide" type="button">Hide gizmos</button>
       <button id="reset" type="button">New scene</button>
     </div>
+    <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
+    <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
+    <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
+    <div class="slide"><span>Figure 1 hand, up</span><input id="wy0" type="range" min="0.9" max="1.8" step="0.01" value="1.4"><span id="wy0v">1.40</span></div>
+    <div class="slide"><span>Figure 2 hand, side</span><input id="wx1" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx1v">0.00</span></div>
+    <div class="row" style="margin-top:8px"><button id="colour" type="button">Next colour</button><button id="addLook" type="button">Add beat with look</button><button id="gapB" type="button">Gap: 1.0 s</button><button id="songB" type="button">Pretend a song plays: off</button></div>
+    <div class="dim" id="beatNote">Pose figure 1 with its hand up, press Add beat (in the Gizmos panel on the right), move the hand right, Add beat, left, Add beat, then Play. The clock moves on by the gap after each beat.</div>
   </section>
 
   <section class="card">
@@ -78,7 +85,9 @@
 <script src="gizmo_next_core.js"></script>
 <script src="gizmo_next_testkit.js"></script>
 <script src="gizmo_next_probe.js"></script>
+<script src="gizmo_next_beats.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
+<script src="gizmo_next_beats_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -91,6 +100,16 @@
   var visitor = kit.makePeer('v1', 'Visitor', [3, 1.6, 3.5], { guest: true });
   ctx._peers.push(visitor);
   var hiddenBoxes = false;
+
+  /* two fake figures for the Beat strip: a pose (the wrist) and a look (a colour). The host page would give the real ones through ctx.pose and ctx.look. */
+  var COLS = [[1, 0.54, 0.36], [0.35, 0.88, 0.7], [0.55, 0.5, 1], [1, 0.85, 0.3]], colIx = 0, songOn = false, songT = 0;
+  var figs = { s0: { pose: { joints: { wrist: [0, 1.4, 0], elbow: [0, 1.1, 0] }, pos: [-0.9, 0, 0], turn: 0 }, look: { tint: COLS[0].slice() } }, s1: { pose: { joints: { wrist: [0, 1.4, 0], elbow: [0, 1.1, 0] }, pos: [0.9, 0, 0], turn: 0 }, look: { tint: COLS[1].slice() } } };
+  var cp = function (v) { return JSON.parse(JSON.stringify(v)); };
+  ctx.pose = { get: function (s) { return figs[s] ? cp(figs[s].pose) : null; }, apply: function (s, p) { if (figs[s]) { figs[s].pose = cp(p); syncSliders(); } } };
+  ctx.look = { get: function (s) { return figs[s] ? cp(figs[s].look) : null; }, apply: function (s, p) { if (figs[s]) figs[s].look = cp(p); } };
+  ctx._figures = [{ slot: 's0' }, { slot: 's1' }];
+  ctx.songTime = function () { return songOn ? songT : null; };
+  ctx.selectedSlots = function () { return ['s0', 's1']; };
   var g = GN.create(ctx);
 
   /* the demo kind: a drawn volume that notices when the visitor steps in. Armed is off by default, like a trigger box will be. */
@@ -196,6 +215,30 @@
   $('loadJson').addEventListener('click', function () { try { g.load(JSON.parse($('json').value)); sel = null; paint(); } catch (e) { $('json').value = 'That is not valid JSON.'; } });
   g.mountPanel($('panel2d'));
 
+  /* the fake figures: sliders pose them, the Beat strip moves them */
+  var sl3 = { wx0: ['s0', 0], wy0: ['s0', 1], wx1: ['s1', 0] };
+  function syncSliders() { Object.keys(sl3).forEach(function (id) { var w = figs[sl3[id][0]].pose.joints.wrist; $(id).value = w[sl3[id][1]]; $(id + 'v').textContent = Number(w[sl3[id][1]]).toFixed(2); }); }
+  Object.keys(sl3).forEach(function (id) { $(id).addEventListener('input', function () { var w = figs[sl3[id][0]].pose.joints.wrist; w[sl3[id][1]] = Number($(id).value); $(id + 'v').textContent = Number($(id).value).toFixed(2); }); });
+  $('colour').addEventListener('click', function () { colIx = (colIx + 1) % COLS.length; figs.s0.look = { tint: COLS[colIx].slice() }; });
+  $('addLook').addEventListener('click', function () { var B = g.modules.beats; if (B) B.addBeatNow(['s0', 's1'], { look: true }); });
+  $('gapB').addEventListener('click', function () { var B = g.modules.beats, o = [0.5, 1, 1.5, 2]; if (B) { B.setGap(o[(o.indexOf(B.clock.gap) + 1) % o.length]); $('gapB').textContent = 'Gap: ' + B.clock.gap.toFixed(1) + ' s'; } });
+  $('songB').addEventListener('click', function () { songOn = !songOn; songT = 0; $('songB').textContent = 'Pretend a song plays: ' + (songOn ? 'on' : 'off'); });
+  var fc = $('figs').getContext('2d');
+  function drawFigs() {
+    fc.fillStyle = '#100c18'; fc.fillRect(0, 0, 420, 190);
+    ['s0', 's1'].forEach(function (s, i) {
+      var f = figs[s], cx = 105 + i * 210, base = 170, k = 85, w = f.pose.joints.wrist, col = f.look.tint.map(function (v) { return Math.round(Math.max(0, Math.min(1, v)) * 255); });
+      fc.strokeStyle = 'rgb(' + col.join(',') + ')'; fc.fillStyle = fc.strokeStyle; fc.lineWidth = 4;
+      fc.beginPath(); fc.moveTo(cx, base); fc.lineTo(cx, base - 0.95 * k); fc.stroke();
+      fc.beginPath(); fc.arc(cx, base - 1.15 * k, 12, 0, 7); fc.fill();
+      fc.beginPath(); fc.moveTo(cx, base - 0.85 * k); fc.lineTo(cx + w[0] * k * 0.8, base - w[1] * k * 0.8 - 12); fc.stroke();
+      fc.beginPath(); fc.arc(cx + w[0] * k * 0.8, base - w[1] * k * 0.8 - 12, 5, 0, 7); fc.fill();
+      fc.fillStyle = '#a89fbd'; fc.font = '11px system-ui'; fc.textAlign = 'center'; fc.fillText('Figure ' + (i + 1), cx, 186);
+    });
+    var B = g.modules.beats;
+    if (B) { fc.fillStyle = '#f3eee2'; fc.textAlign = 'left'; fc.font = '12px system-ui'; fc.fillText('Beats: ' + B.list().length + '   clock ' + B.clock.t.toFixed(2) + ' s   ' + B.clock.state + '   ' + B.clock.mode, 8, 16); }
+  }
+
   /* the selftests, in this page */
   $('runTests').addEventListener('click', function () {
     var out = $('out'); out.textContent = ''; var lines = [];
@@ -209,12 +252,12 @@
 
   /* the frame loop: tick the kit, redraw the map */
   var last = performance.now();
-  function frame(now) { var dt = Math.min(0.1, (now - last) / 1000); last = now; g.tick(dt); draw(); requestAnimationFrame(frame); }
+  function frame(now) { var dt = Math.min(0.1, (now - last) / 1000); last = now; if (songOn) songT += dt; g.tick(dt); draw(); drawFigs(); requestAnimationFrame(frame); }
   K().add({ x: -1.5, z: -1, name: 'Doorway' });
   sel = K().list[0].id; paint();
   var painter = setInterval(paintList, 500);
   requestAnimationFrame(frame);
-  window.__demo = { g: g, ctx: ctx, visitor: visitor, K: K, paint: paint };
+  window.__demo = { g: g, ctx: ctx, visitor: visitor, K: K, paint: paint, figs: figs, beats: g.modules.beats };
 })();
 </script>
 </body>
