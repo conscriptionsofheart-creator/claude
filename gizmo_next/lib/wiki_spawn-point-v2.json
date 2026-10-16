@@ -1,0 +1,52 @@
+{
+  "id": "spawn-point-v2",
+  "name": "Spawn points, several",
+  "area": "Props",
+  "group": "BSA",
+  "summary": "You can now have several spawn points. Each one says who it is for, which way they face, how fast and how heavy they are, and where it sits in the order. A friend who joins lands on the first one, or takes turns, and you can test it on yourself.",
+  "helps": "Put each friend where you want them when they arrive, and send people back if they fall out of the world.",
+  "where2d": "Atelier and BSA, right panel, Gizmos: the spawn point settings.",
+  "whereVR": "Wrist menu > Objects > Gizmos > Spawn point",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the right panel, find Gizmos, and press Add next to Spawn point. Add a second one.",
+      "Drag each to where you want people to land. Point the arrow the way they should face.",
+      "Set Order to 1 and 2, and set Pick to Take turns on the first.",
+      "Press Test arrive to try it on yourself.",
+      "Turn Gizmos live on."
+    ],
+    "vr": [
+      "Open the wrist menu and press Objects, then Gizmos, then Spawn point. Add a second one.",
+      "Put each where you want people to land and turn it so the arrow points the way they should face.",
+      "Tap one and set Order, Who and Pick. Press Check this point and Test arrive.",
+      "Open Settings and turn Gizmos live on."
+    ],
+    "use": [
+      "a point with no floor, or inside something solid, is refused with a message",
+      "arrivals fade in over 0.4 seconds, never a flash",
+      "Test arrive moves only you",
+      "Respawn sends someone back if they fall below a height or leave the room",
+      "a Snap spot makes the walk-teleport aim land on its centre",
+      "a friend is only moved by the host, and only while Gizmos live is on."
+    ]
+  },
+  "keywords": ["spawn", "spawn point", "arrive", "order", "turns", "respawn", "snap", "guest", "gravity", "speed", "gizmo"],
+  "related": ["lesson-gizmos", "trigger-box", "beat-strip"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Props", "VR"],
+  "changes": [
+    {
+      "id": "spawn-point-v2-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now place several spawn points and say who each is for, so add a second one from Objects, Gizmos, set its Order and Pick, and press Test arrive.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Gizmos live" },
+      "tiles": ["Spawn point"]
+    }
+  ]
+}

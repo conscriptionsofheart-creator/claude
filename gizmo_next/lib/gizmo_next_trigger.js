@@ -117,7 +117,7 @@
         try {
           if (s.do === 'beats') { if (!B || !B.playRange(s.arg)) once('beats:' + rec.id, 'The trigger ' + rec.name + ' could not play the beats ' + s.arg + '.'); }
           else if (s.do === 'sound') { o = c.sounds; var parts = s.arg.split(':'); if (!o || typeof o.playMode !== 'function') return once('sound', 'Sound is not connected, so a trigger cannot start one.'); o.playMode(parts[0], parts[1] === 'loop' || parts[1] === 'stop' ? parts[1] : 'once'); }
-          else if (s.do === 'spawn') { o = c.spawn; if (!o || typeof o.send !== 'function') return once('spawn', 'Spawn points are not connected yet, so a trigger cannot send anyone.'); o.send(v.id, s.arg); }
+          else if (s.do === 'spawn') { var SP = g.modules.spawn; if (SP && typeof SP.send === 'function') SP.send(v, s.arg); else { o = c.spawn; if (!o || typeof o.send !== 'function') return once('spawn', 'Spawn points are not connected yet, so a trigger cannot send anyone.'); o.send(v.id, s.arg); } }
           else if (s.do === 'seat') { o = c.seat; if (!o || typeof o.sit !== 'function') return once('seat', 'Seats are not connected yet, so a trigger cannot sit anyone.'); o.sit(v.id, s.arg); }
           else if (s.do === 'script') { o = c.scripts; if (!o || typeof o.event !== 'function') return once('script', 'Scripts are not connected yet, so a trigger cannot run one.'); o.event('trigger', rec.id, 'start', s.arg); }
           else if (s.do === 'show' || s.do === 'hide') { if (typeof c.setObjectVisible !== 'function') return once('show', 'Showing and hiding objects is not connected yet.'); c.setObjectVisible(s.arg, s.do === 'show'); }

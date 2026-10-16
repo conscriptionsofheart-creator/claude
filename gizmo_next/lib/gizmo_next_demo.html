@@ -55,6 +55,7 @@
     </div>
     <div class="row"><button id="addTrig" type="button">Add trigger box</button><button id="tplGreet" type="button">Greeting at the door</button><button id="armTrig" type="button">Arm all triggers</button></div>
     <div class="row"><button id="recFall" type="button">Record a fall (3 s)</button><button id="playFall" type="button">Play last fall</button><button id="stopFall" type="button">Stop the fall</button></div>
+    <div class="row"><button id="addSpawn" type="button">Add spawn point</button><button id="guestJoins" type="button">Guest joins</button><button id="testArrive" type="button">Test arrive</button></div>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -91,11 +92,13 @@
 <script src="gizmo_next_actions.js"></script>
 <script src="gizmo_next_trigger.js"></script>
 <script src="gizmo_next_ragdoll.js"></script>
+<script src="gizmo_next_spawn.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
 <script src="gizmo_next_actions_selftest.js"></script>
 <script src="gizmo_next_trigger_selftest.js"></script>
 <script src="gizmo_next_ragdoll_selftest.js"></script>
+<script src="gizmo_next_spawn_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -133,6 +136,11 @@
     for (var j = 1; j <= 20; j++) { var ang = ((j === 4 || j === 5) ? 2 : 0.3 + 0.02 * j) * a; q[j] = j % 2 ? [Math.sin(ang / 2), 0, 0, Math.cos(ang / 2)] : [0, 0, Math.sin(ang / 2), Math.cos(ang / 2)]; }
     return { root: { p: [0.5 * t, 1 - 0.9 * ss(t), 0.2 * t], q: [0, 0, Math.sin(rr / 2), Math.cos(rr / 2)] }, q: q }; } };
   ctx.clips = { play: function (s, clip) { voiceLog = 'Fall playing: ' + clip.frames.length + ' frames'; }, stop: function () { voiceLog = 'Fall stopped'; } };
+  /* a stand-in for the page's SpawnPoint (H5): several points, and the rig and the guest dot move when someone arrives */
+  var SPAWN = { list: [], max: 4, H: 0.25, add: function (spec) { if (SPAWN.list.length >= SPAWN.max) return null; var m = Object.assign({ id: 'w' + (SPAWN.list.length + 1), name: 'Spawn point ' + (SPAWN.list.length + 1), x: 0, y: 0, z: 0, yaw: 0, locked: false, group: '' }, spec || {}); SPAWN.list.push(m); return m; }, get: function (id) { return SPAWN.list.find(function (m) { return m.id === id; }) || null; } };
+  ctx.spawn = SPAWN; ctx.floorFn = function () { return 0; };
+  ctx.teleport = function (v, a) { ctx._head = [a.x, 1.6, a.z]; voiceLog = 'You arrived at ' + a.x + ', ' + a.z + (a.yaw === null ? '' : ', facing ' + a.yaw.toFixed(2)); };
+  ctx.sync = { send: function (n, o) { if (n === 'spawn' && o.who === 'v1') { visitor.head = [o.x, 1.6, o.z]; visitor.feet = [o.x, 0, o.z]; } }, on: function () {} };
   ctx.sounds = { playMode: function (id, m) { voiceLog = 'Sound ' + id + ': ' + m; } };
   ctx.selectedSlots = function () { return ['s0', 's1']; };
   var g = GN.create(ctx);
@@ -192,6 +200,8 @@
       c.globalAlpha = hit ? 0.5 : 0.2; c.fillStyle = hit ? '#5ae0b4' : '#8c8cff'; c.fill(); c.globalAlpha = 1; c.lineWidth = 2; c.strokeStyle = rec.armed ? '#8c8cff' : '#5d5a80'; c.setLineDash(rec.armed ? [] : [4, 4]); c.stroke(); c.setLineDash([]);
       var m = toPx(rec.x, rec.z); c.fillStyle = '#f3eee2'; c.font = '11px system-ui'; c.textAlign = 'center'; c.fillText(rec.name + (rec.armed ? '' : ' (not armed)'), m[0], m[1] + 4);
     });
+    SPAWN.list.forEach(function (m) { var p = toPx(m.x, m.z), a = toPx(m.x - Math.sin(m.yaw) * 0.6, m.z - Math.cos(m.yaw) * 0.6); c.strokeStyle = '#5ae0b4'; c.lineWidth = 2; c.beginPath(); c.arc(p[0], p[1], 12, 0, 7); c.stroke(); c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(a[0], a[1]); c.stroke(); c.fillStyle = '#5ae0b4'; c.font = '11px system-ui'; c.textAlign = 'center'; c.fillText(m.name, p[0], p[1] + 26); });
+    var hp = toPx(ctx._head[0], ctx._head[2]); c.strokeStyle = '#f3eee2'; c.lineWidth = 1; c.beginPath(); c.arc(hp[0], hp[1], 5, 0, 7); c.stroke();
     var v = toPx(visitor.head[0], visitor.head[2]); c.beginPath(); c.arc(v[0], v[1], 9, 0, 7); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 2; c.strokeStyle = '#ff8a5c'; c.stroke();
   }
 
@@ -252,6 +262,9 @@
   $('recFall').addEventListener('click', function () { var R4 = g.modules.ragdoll; fallT0 = performance.now(); if (R4.record('s0')) { voiceLog = 'Recording a fall'; clearTimeout(fallTimer); fallTimer = setTimeout(function () { var id = R4.stop(); voiceLog = id ? 'Recorded ' + id + ', ' + R4.get(id).bytes + ' bytes' : voiceLog; }, 3000); } });
   $('playFall').addEventListener('click', function () { var R4 = g.modules.ragdoll, c = R4.clips(); if (c.length) R4.play('s0', c[c.length - 1].id); });
   $('stopFall').addEventListener('click', function () { g.modules.ragdoll.stopPlay('s0'); });
+  $('addSpawn').addEventListener('click', function () { var n = SPAWN.list.length + 1, m = SPAWN.add({ x: [-3, 3, -3, 3][n % 4], z: [-3, -3, 3, 3][n % 4], yaw: n * 0.7 }); if (m) g.modules.spawn.setFields(m.id, { order: n, pick: 'turns' }); });
+  $('guestJoins').addEventListener('click', function () { visitor.head = [4.5, 1.6, 4.5]; visitor.feet = [4.5, 0, 4.5]; g.modules.spawn.onJoin(visitor); });
+  $('testArrive').addEventListener('click', function () { g.modules.spawn.testArrive(); });
   $('addTrig').addEventListener('click', function () { var T3 = g.modules.trigger; var r = T3.add({ x: Math.round((Math.random() * 4 - 2) * 10) / 10, y: 1, z: Math.round((Math.random() * 4 - 2) * 10) / 10, name: 'Trigger ' + (T3.list().length + 1), starts: [{ do: 'sound', arg: 'bell', delay: 0 }] }); if (r) paint(); });
   $('tplGreet').addEventListener('click', function () { var r = g.modules.trigger.template('greeting'); if (r) { g.modules.trigger.kind.set(r.id, { x: -1.5, y: 1, z: 1.5, size: [2, 2, 2] }); } });
   $('armTrig').addEventListener('click', function () { g.modules.trigger.list().forEach(function (r) { g.modules.trigger.kind.set(r.id, { armed: true }); }); });
