@@ -19,3 +19,5 @@ H7: none. The walk model generates no assets. Everything is code and test data m
 H8: none. The effects gizmo generates no assets (particles and the trail ribbon are drawn from code; the comet_trail shader is not used). Everything is code and test data made in code. No restricted-source data is used or referenced.
 
 H9: none. Friends and saving generate no assets. guest_files_list.txt names only code files. Everything is code and test data made in code. No restricted-source data is used or referenced.
+
+H10: none. The scripting layer generates no assets. Everything is code and test data made in code. No restricted-source data is used or referenced.

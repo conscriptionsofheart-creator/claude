@@ -60,6 +60,8 @@
     <div class="row"><button id="wkWalk" type="button">Walk 1 s</button><button id="wkRun" type="button">Run 1 s</button><button id="wkJump" type="button">Jump</button><button id="wkFly" type="button">Fly up 1 s</button><button id="wkSpeed" type="button">Speed: 4</button></div>
     <div class="row"><button id="addFx" type="button">Add effects gizmo</button><button id="fxOnce" type="button">Play once</button><button id="fxLoop" type="button">Loop</button><button id="fxStop" type="button">Stop</button><button id="fxPreset" type="button">Preset: sparks</button><button id="fxColour" type="button">Colour: gold</button></div>
     <div class="row"><button id="friendTest" type="button">Pretend friend joins (host + guest, 80 ms delay)</button><span id="friendOut" class="dim"></span></div>
+    <div class="row"><button id="tplGreeting" type="button">Template: Greeting at the door</button><button id="tplFall" type="button">Template: Fall and get up</button><button id="tplTest" type="button">Test it with me</button><button id="tplBlocksUi" type="button">Show Blocks panel</button></div>
+    <pre id="tplCode" class="dim" style="white-space:pre-wrap;max-height:160px;overflow:auto;margin:4px 0"></pre><div id="tplPanel"></div>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -100,6 +102,10 @@
 <script src="gizmo_next_seat.js"></script>
 <script src="gizmo_next_walk.js"></script>
 <script src="gizmo_next_effects.js"></script>
+<script src="gizmo_next_blocks.js"></script>
+<script src="gizmo_next_templates.js"></script>
+<script src="gizmo_next_script.js"></script>
+<script src="gizmo_next_script_sandbox.js"></script>
 <script src="gizmo_next_sync.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
@@ -111,6 +117,7 @@
 <script src="gizmo_next_walk_selftest.js"></script>
 <script src="gizmo_next_effects_selftest.js"></script>
 <script src="gizmo_next_sync_selftest.js"></script>
+<script src="gizmo_next_script_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -290,6 +297,13 @@
   $('walkSeat').addEventListener('click', function () { var m = SEATS.list[0]; if (m) ctx._head = [m.x, 1.58, m.z + 0.6]; });
   $('sitBtn').addEventListener('click', function () { var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) g.modules.seat.sit(pp.seatId); else voiceLog = 'No Sit tile here: go within 0.8 m and face the seat'; });
   $('standBtn').addEventListener('click', function () { g.modules.seat.stand(); });
+  /* H10: templates and blocks. The blocks make the code you see; Test it with me sends a pretend visitor through them (no Scripts needed). */
+  var tplKey = null;
+  function showTpl(r) { if (!r) { $('tplCode').textContent = 'That template could not be added.'; return; } tplKey = r.key; $('tplCode').textContent = r.code + '\n' + g.modules.script.describe(r.key).join('\n'); }
+  $('tplGreeting').addEventListener('click', function () { showTpl(g.modules.script.installTemplate('greeting-at-the-door')); });
+  $('tplFall').addEventListener('click', function () { showTpl(g.modules.script.installTemplate('fall-and-get-up')); });
+  $('tplTest').addEventListener('click', function () { if (tplKey) { g.modules.script.testIt(tplKey); voiceLog = 'Tested ' + tplKey + ': ' + g.modules.script.runLog().slice(-1).map(function (e) { return e.text; }).join(''); } else voiceLog = 'Pick a template first'; });
+  $('tplBlocksUi').addEventListener('click', function () { g.modules.script.mountBlocks($('tplPanel')); });
   /* H9: a host page and a friend's page in memory, joined by a room with 80 ms of delay */
   $('friendTest').addEventListener('click', function () {
     var H = kit.makeHostGuest({ latencyMs: 80, host: { head: [0, 1.6, 30], peers: [] }, guest: {} }), hm = H.host.modules, gmod = H.guest.modules;

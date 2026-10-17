@@ -117,7 +117,7 @@
   /* ---------- the global ---------- */
   var REG = [], INST = [], ATTACHED = {}, LOADED = {}, PENDING_FILES = 0;
   var GN = {
-    _isGN: true, inst: null, PARTS: ['gizmo_next_beats.js', 'gizmo_next_actions.js', 'gizmo_next_trigger.js', 'gizmo_next_ragdoll.js', 'gizmo_next_spawn.js', 'gizmo_next_seat.js', 'gizmo_next_walk.js', 'gizmo_next_effects.js', 'gizmo_next_sync.js'], icons: {},
+    _isGN: true, inst: null, PARTS: ['gizmo_next_beats.js', 'gizmo_next_actions.js', 'gizmo_next_trigger.js', 'gizmo_next_ragdoll.js', 'gizmo_next_spawn.js', 'gizmo_next_seat.js', 'gizmo_next_walk.js', 'gizmo_next_effects.js', 'gizmo_next_blocks.js', 'gizmo_next_templates.js', 'gizmo_next_script.js', 'gizmo_next_sync.js'], icons: {},
     get version() { return '0.' + (1 + REG.length); },
     get ready() { return !!(GN.inst && GN.inst._installed && PENDING_FILES <= 0); },
     safe: safe, plain: plain, _instances: INST, _registry: REG

@@ -1,0 +1,50 @@
+{
+  "id": "scripting-layer",
+  "name": "Scripting layer: blocks and templates",
+  "area": "Settings",
+  "group": "BSA",
+  "summary": "Build what happens in your scene with simple blocks like 'When a guest enters Doorway, play beats Greeting, wait 2 seconds, seat them in Chair 1'. The blocks write real code you can read and change.",
+  "helps": "Make doors that greet, bells that ring, chairs that welcome and music that follows people, without writing code, and move on to code when you want more.",
+  "where2d": "Atelier, Scripts tab: Blocks.",
+  "whereVR": "Wrist menu > Objects > Scripts",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the Scripts tab and find Blocks.",
+      "Press a template, such as Greeting at the door.",
+      "Change the wait, or the beats it plays.",
+      "Turn Scripts on, then press Test it with me."
+    ],
+    "vr": [
+      "Open the wrist menu and press Objects, then Scripts.",
+      "Turn Scripts on.",
+      "Walk into the door box and watch the greeting play."
+    ],
+    "use": [
+      "scripts never run when a scene opens",
+      "turning Scripts off stops everything and puts it back",
+      "the blocks write code you can read",
+      "if you edit the code, the blocks turn grey",
+      "Test it with me sends a pretend visitor through",
+      "visitor counts are off unless you turn them on."
+    ]
+  },
+  "keywords": ["scripts", "blocks", "templates", "greeting", "doorbell", "events", "fields", "trigger", "test"],
+  "related": ["lesson-settings", "trigger-box", "beat-actions", "seat-gizmo-v2", "effects-gizmo"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Settings", "VR"],
+  "changes": [
+    {
+      "id": "scripting-layer-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now build scripts from blocks and start from five templates, so open the Scripts tab, pick a template, then press Test it with me.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Scripts" },
+      "tiles": ["Scripts"]
+    }
+  ]
+}

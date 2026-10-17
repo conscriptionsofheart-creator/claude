@@ -7,4 +7,7 @@ gizmo_next_spawn.js
 gizmo_next_seat.js
 gizmo_next_walk.js
 gizmo_next_effects.js
+gizmo_next_blocks.js
+gizmo_next_templates.js
+gizmo_next_script.js
 gizmo_next_sync.js
