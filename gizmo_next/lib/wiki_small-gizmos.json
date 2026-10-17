@@ -1,0 +1,49 @@
+{
+  "id": "small-gizmos",
+  "name": "Signs, doors, mirrors and more",
+  "area": "Props",
+  "group": "BSA",
+  "summary": "A few small helpers: a Text sign, a Door to another scene, warnings when you use too many lights, settings to make mirrors cheaper, camera cuts that fade, and pitch for sounds.",
+  "helps": "Put a sign by the door, link scenes together, and keep your scene running smoothly.",
+  "where2d": "Atelier and BSA, right panel, Gizmos: Text sign and Door. Settings: Scene limits.",
+  "whereVR": "Wrist menu > Objects > Gizmos > Text sign or Door",
+  "vr": true,
+  "steps": {
+    "d2": [
+      "Open the right panel, find Gizmos, and press Add next to Text sign.",
+      "Change the words, then try Auto Fit.",
+      "Add a Door, pick a scene, turn Gizmos live on and press Go."
+    ],
+    "vr": [
+      "Open the wrist menu and press Objects, then Gizmos, then Text sign. Put it where you want the sign.",
+      "Tap it to change the words or the size.",
+      "Add a Door, tap it and press Go."
+    ],
+    "use": [
+      "a sign can hold up to 1000 letters",
+      "Auto Fit makes the letters smaller so all the words fit",
+      "a door only opens when you press Go, and only while Gizmos live is on",
+      "a friend only sees doors to scenes you shared",
+      "camera cuts fade over a short moment and never flash",
+      "a warning shows when you have more than 20 lights."
+    ]
+  },
+  "keywords": ["text", "sign", "door", "scene", "light", "mirror", "camera", "pitch", "material", "softwood", "ice"],
+  "related": ["trigger-box", "sound-gizmo", "beat-actions", "effects-gizmo"],
+  "images": [],
+  "clip": null,
+  "thumb": null,
+  "added": "0.41.0",
+  "changed": "0.41.0",
+  "tags": ["Props", "VR"],
+  "changes": [
+    {
+      "id": "small-gizmos-2026-10-16",
+      "date": "2026-10-16",
+      "note": "You can now add a Text sign and a Door to another scene, so add one from Gizmos, then set the words or pick a scene.",
+      "app": "both",
+      "target": { "where": "settings", "label": "Gizmos live" },
+      "tiles": ["Text sign", "Door"]
+    }
+  ]
+}

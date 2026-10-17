@@ -10,4 +10,5 @@ gizmo_next_effects.js
 gizmo_next_blocks.js
 gizmo_next_templates.js
 gizmo_next_script.js
+gizmo_next_small.js
 gizmo_next_sync.js

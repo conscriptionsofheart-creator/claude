@@ -81,7 +81,7 @@
     }
     if (t === 'boolean') return typeof v === 'boolean' ? v : d;
     if (t === 'string') {
-      var s = typeof v === 'string' ? cut(v, 80) : d;
+      var s = typeof v === 'string' ? cut(v, f && isNum(f.maxLen) ? clamp(Math.floor(f.maxLen), 1, 2000) : 80) : d;
       if (f && f.type === 'enum' && Array.isArray(f.opts) && !f.opts.some(function (o) { return o[0] === s; })) s = d;
       return s;
     }
@@ -117,7 +117,7 @@
   /* ---------- the global ---------- */
   var REG = [], INST = [], ATTACHED = {}, LOADED = {}, PENDING_FILES = 0;
   var GN = {
-    _isGN: true, inst: null, PARTS: ['gizmo_next_beats.js', 'gizmo_next_actions.js', 'gizmo_next_trigger.js', 'gizmo_next_ragdoll.js', 'gizmo_next_spawn.js', 'gizmo_next_seat.js', 'gizmo_next_walk.js', 'gizmo_next_effects.js', 'gizmo_next_blocks.js', 'gizmo_next_templates.js', 'gizmo_next_script.js', 'gizmo_next_sync.js'], icons: {},
+    _isGN: true, inst: null, PARTS: ['gizmo_next_beats.js', 'gizmo_next_actions.js', 'gizmo_next_trigger.js', 'gizmo_next_ragdoll.js', 'gizmo_next_spawn.js', 'gizmo_next_seat.js', 'gizmo_next_walk.js', 'gizmo_next_effects.js', 'gizmo_next_blocks.js', 'gizmo_next_templates.js', 'gizmo_next_script.js', 'gizmo_next_small.js', 'gizmo_next_sync.js'], icons: {},
     get version() { return '0.' + (1 + REG.length); },
     get ready() { return !!(GN.inst && GN.inst._installed && PENDING_FILES <= 0); },
     safe: safe, plain: plain, _instances: INST, _registry: REG
@@ -235,6 +235,7 @@
       });
       var k = { spec: S, list: [], nid: 1, markers: !g.isGuest(), api: null, F: {}, reg: false, thumbs: {} };
       S.fields.forEach(function (f) { k.F[f.key] = f; });
+      if (spec.strMax && typeof spec.strMax === 'object') Object.keys(spec.strMax).forEach(function (key) { if (!BAD[key] && isNum(spec.strMax[key])) k.F[key] = { key: key, type: 'str', maxLen: spec.strMax[key] }; });
       var hiddenNow = function () { var G = gizmosApi(); try { return !!(G && typeof G.hidden === 'function' && G.hidden(id)); } catch (e) { return false; } };
       var persistKind = function () { if (!g._loading) g.persist(); };
 

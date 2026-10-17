@@ -62,6 +62,8 @@
     <div class="row"><button id="friendTest" type="button">Pretend friend joins (host + guest, 80 ms delay)</button><span id="friendOut" class="dim"></span></div>
     <div class="row"><button id="tplGreeting" type="button">Template: Greeting at the door</button><button id="tplFall" type="button">Template: Fall and get up</button><button id="tplTest" type="button">Test it with me</button><button id="tplBlocksUi" type="button">Show Blocks panel</button></div>
     <pre id="tplCode" class="dim" style="white-space:pre-wrap;max-height:160px;overflow:auto;margin:4px 0"></pre><div id="tplPanel"></div>
+    <div class="row"><button id="smText" type="button">Add text sign</button><button id="smDoor" type="button">Add door + Go</button><button id="smLight" type="button">Add a light</button><button id="smMirror" type="button">Mirror radius</button><button id="smShot" type="button">Camera shot (0.4 s fade)</button><button id="smPitch" type="button">Pitch up</button></div>
+    <div id="smOut" class="dim" style="min-height:1.4em;margin:2px 0"></div>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -106,6 +108,7 @@
 <script src="gizmo_next_templates.js"></script>
 <script src="gizmo_next_script.js"></script>
 <script src="gizmo_next_script_sandbox.js"></script>
+<script src="gizmo_next_small.js"></script>
 <script src="gizmo_next_sync.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
@@ -118,6 +121,7 @@
 <script src="gizmo_next_effects_selftest.js"></script>
 <script src="gizmo_next_sync_selftest.js"></script>
 <script src="gizmo_next_script_selftest.js"></script>
+<script src="gizmo_next_small_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -297,6 +301,19 @@
   $('walkSeat').addEventListener('click', function () { var m = SEATS.list[0]; if (m) ctx._head = [m.x, 1.58, m.z + 0.6]; });
   $('sitBtn').addEventListener('click', function () { var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) g.modules.seat.sit(pp.seatId); else voiceLog = 'No Sit tile here: go within 0.8 m and face the seat'; });
   $('standBtn').addEventListener('click', function () { g.modules.seat.stand(); });
+  /* H11: the small gaps. The page stands in for the things they reach: scenes, lights, the camera and the sound library. */
+  var smLights = [], smOpened = [], smShots = [], smMirrorR = [4, 8, 16, 32, 64], smMirrorAt = 2;
+  ctx.openScene = function (n) { smOpened.push(n); $('smOut').textContent = 'Opened the scene ' + n; };
+  ctx.sharedScenes = function () { return ['Garden']; }; ctx.sceneList = function () { return ['Garden', 'Cellar']; };
+  ctx.lights = function () { return smLights; };
+  ctx.camera = Object.assign(ctx.camera || {}, { shots: function () { return ['wide', 'close']; }, shot: function (n, o) { smShots.push(n); $('smOut').textContent = 'Camera shot ' + n + ' with a fade of ' + (o && o.fadeSec) + ' s'; }, fade: function () {} });
+  ctx.sounds = Object.assign(ctx.sounds || {}, { set: function (id, p) { $('smOut').textContent = 'Sound ' + id + ': pitch ' + p.pitch + ', min distance ' + p.minDistance + ' m, fade ' + p.fade + ' s'; } });
+  $('smText').addEventListener('click', function () { var n = g.modules.small.text.kind.list.length, r = g.modules.small.text.add({ x: [-3, 3, -3, 3][n % 4], y: 1.5, z: [4, 4, -4, -4][n % 4], text: ['Welcome', 'Exit this way', 'No entry', 'Please sit down'][n % 4] }); $('smOut').textContent = r ? 'Text sign: ' + r.text : ''; });
+  $('smDoor').addEventListener('click', function () { var S2 = g.modules.small, d = S2.door.kind.list[0] || S2.door.add({ sceneName: 'Garden' }); if (d) { var ok = S2.door.go(d.id); $('smOut').textContent = ok ? 'Went to ' + d.sceneName : (g.isLive() ? 'No scene' : 'Turn Gizmos live on to use this door'); } });
+  $('smLight').addEventListener('click', function () { smLights.push({ id: 'l' + smLights.length }); var a = g.modules.small.light.check(); $('smOut').textContent = a.message; });
+  $('smMirror').addEventListener('click', function () { smMirrorAt = (smMirrorAt + 1) % smMirrorR.length; var f = g.modules.small.mirror.set('m1', { radius: smMirrorR[smMirrorAt] }); $('smOut').textContent = 'Mirror radius ' + f.radius + ' m, cost ' + Math.round(g.modules.small.mirror.cost(f) * 100) + ' of 100'; });
+  $('smShot').addEventListener('click', function () { g.modules.small.camera.cut('wide'); });
+  $('smPitch').addEventListener('click', function () { var S2 = g.modules.small, f = S2.sound.fields('s1'); S2.sound.set('s1', { pitch: Math.min(2, f.pitch * 1.0595) }); });
   /* H10: templates and blocks. The blocks make the code you see; Test it with me sends a pretend visitor through them (no Scripts needed). */
   var tplKey = null;
   function showTpl(r) { if (!r) { $('tplCode').textContent = 'That template could not be added.'; return; } tplKey = r.key; $('tplCode').textContent = r.code + '\n' + g.modules.script.describe(r.key).join('\n'); }

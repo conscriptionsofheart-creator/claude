@@ -1,0 +1,16 @@
+{
+  "softwood": {
+    "name": "Softwood",
+    "b": 0.25,
+    "fr": 6,
+    "air": 0.2,
+    "ay": 0
+  },
+  "superice": {
+    "name": "Super ice",
+    "b": 0.1,
+    "fr": 0.15,
+    "air": 0.1,
+    "ay": 0
+  }
+}
