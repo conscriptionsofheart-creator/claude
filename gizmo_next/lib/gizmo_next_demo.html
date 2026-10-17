@@ -64,6 +64,8 @@
     <pre id="tplCode" class="dim" style="white-space:pre-wrap;max-height:160px;overflow:auto;margin:4px 0"></pre><div id="tplPanel"></div>
     <div class="row"><button id="smText" type="button">Add text sign</button><button id="smDoor" type="button">Add door + Go</button><button id="smLight" type="button">Add a light</button><button id="smMirror" type="button">Mirror radius</button><button id="smShot" type="button">Camera shot (0.4 s fade)</button><button id="smPitch" type="button">Pitch up</button></div>
     <div id="smOut" class="dim" style="min-height:1.4em;margin:2px 0"></div>
+    <div class="row"><button id="runExample" type="button">Run the example (Ruth's greeting)</button></div>
+    <pre id="exampleOut" class="dim" style="white-space:pre-wrap;margin:4px 0"></pre>
     <h2 style="margin-top:14px">Beat strip (stage H1)</h2>
     <canvas id="figs" width="420" height="190" aria-label="Two fake figures. The wrist follows the sliders and the beats." style="aspect-ratio:auto;cursor:default"></canvas>
     <div class="slide"><span>Figure 1 hand, side</span><input id="wx0" type="range" min="-0.6" max="0.6" step="0.01" value="0"><span id="wx0v">0.00</span></div>
@@ -110,6 +112,7 @@
 <script src="gizmo_next_script_sandbox.js"></script>
 <script src="gizmo_next_small.js"></script>
 <script src="gizmo_next_sync.js"></script>
+<script src="gizmo_next_h12_scenario.js"></script>
 <script src="gizmo_next_G0_selftest.js"></script>
 <script src="gizmo_next_beats_selftest.js"></script>
 <script src="gizmo_next_actions_selftest.js"></script>
@@ -122,6 +125,7 @@
 <script src="gizmo_next_sync_selftest.js"></script>
 <script src="gizmo_next_script_selftest.js"></script>
 <script src="gizmo_next_small_selftest.js"></script>
+<script src="gizmo_next_h12_selftest.js"></script>
 <script>
 (function () {
   'use strict';
@@ -301,6 +305,8 @@
   $('walkSeat').addEventListener('click', function () { var m = SEATS.list[0]; if (m) ctx._head = [m.x, 1.58, m.z + 0.6]; });
   $('sitBtn').addEventListener('click', function () { var pp = g.modules.seat.popup(ctx._head, [0, 0, -1], 1.7); if (pp) g.modules.seat.sit(pp.seatId); else voiceLog = 'No Sit tile here: go within 0.8 m and face the seat'; });
   $('standBtn').addEventListener('click', function () { g.modules.seat.stand(); });
+  /* H12: Ruth's example, start to finish, on a fake clock: poses, voice, three beats, a trigger, a friend walks in. "name: 1" passes. */
+  $('runExample').addEventListener('click', function () { try { $('exampleOut').textContent = GN.H12.runExample(kit).join('\n'); } catch (e) { $('exampleOut').textContent = 'The example stopped: ' + e.message; } });
   /* H11: the small gaps. The page stands in for the things they reach: scenes, lights, the camera and the sound library. */
   var smLights = [], smOpened = [], smShots = [], smMirrorR = [4, 8, 16, 32, 64], smMirrorAt = 2;
   ctx.openScene = function (n) { smOpened.push(n); $('smOut').textContent = 'Opened the scene ' + n; };

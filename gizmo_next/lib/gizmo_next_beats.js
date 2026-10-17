@@ -309,8 +309,9 @@
         var ev = cache.events; if (!ev.length) return;
         var r = region(), lo = r[0], hi = r[1], span = hi - lo; if (!(span > 0)) return;
         var period = curMode() === 'yoyo' ? 2 * span : span;
-        var j0 = Math.floor(prev / period), j1 = Math.floor(cur / period);
+        var j0 = Math.floor(prev / period), j1 = Math.floor((cur + 2e-9) / period); /* the same small allowance as the test below, so a beat exactly at a wrap is never skipped by a rounding error */
         if (j1 - j0 > 50) j0 = j1 - 50;
+        if (curMode() === 'once') { j0 = 0; j1 = 0; } /* a play once does not wrap: the beat at the start must not start again when the end is reached */
         var out = [];
         for (var j = j0; j <= j1; j++) for (var i = 0; i < ev.length; i++) {
           var p = ev[i]; if (p.t < lo - 1e-9 || p.t > hi + 1e-9) continue;

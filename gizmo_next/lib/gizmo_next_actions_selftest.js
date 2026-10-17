@@ -233,6 +233,13 @@
       base(R); R.B.play(0); R.step(2);
       T.check('actions_no_em_dash_in_module_text', R.ctx._said.length >= 3 && R.ctx._said.every(function (m) { return !hasDash(m); }));
     });
+    S('actions_once_end_does_not_restart_first_beat', function () {
+      var R = base(rig()), A = R.A, B = R.B;
+      A.addSay('s0', 'vo_hello', 0);
+      B.play(0); R.step(5);
+      var once = R.count('play'); B.setMode('loop'); B.play(0); R.step(9); var loops = R.count('play') - once; B.stop();
+      T.check('actions_once_end_does_not_restart_first_beat', once === 1 && loops === 3);
+    });
   }
 
   var api = { stage: 'H2', section: 'actions', run: run };

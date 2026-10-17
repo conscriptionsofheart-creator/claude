@@ -23,3 +23,5 @@ H9: none. Friends and saving generate no assets. guest_files_list.txt names only
 H10: none. The scripting layer generates no assets. Everything is code and test data made in code. No restricted-source data is used or referenced.
 
 H11: none. The small gizmos generate no assets (the sign is drawn from text on a canvas; the materials are numbers). Everything is code and test data made in code. No restricted-source data is used or referenced.
+
+H12: none. The acceptance scene generates no assets. The recording is a name, not audio. Everything is code and test data made in code. No restricted-source data is used or referenced.
